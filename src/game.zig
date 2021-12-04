@@ -8,6 +8,7 @@ var snake = Snake.new() catch @panic("");
 var fruit: Point = undefined;
 var prevState: u8 = 0;
 var frameCount: u32 = 0;
+var nextUpdate: u32 = 0;
 var prng = std.rand.DefaultPrng.init(0);
 var random: std.rand.Random = undefined;
 var isDead: bool = false;
@@ -33,7 +34,8 @@ pub fn update() !void {
 
     input();
 
-    if (frameCount % 15 == 0) {
+    if (frameCount >= nextUpdate or snake.nextDirectionOpt != null) {
+        nextUpdate = frameCount + 15;
         if (!snake.isDead()) {
             snake.update();
         }
