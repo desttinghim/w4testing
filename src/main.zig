@@ -1,48 +1,39 @@
 const w4 = @import("wasm4.zig");
 const palettes = @import("palettes.zig");
+const std = @import("std");
+const Point = @import("point.zig").Point;
+const Snake = @import("snake.zig").Snake;
 
-const Point = struct {
-    x: i32,
-    y: i32,
-
-    pub fn eq(this: @This(), other: @This()) bool {
-        return this.x == other.x and this.y == other.y;
-    }
-
-    pub fn new(x: i32, y: i32) @This() {
-        return @This(){ .x = x, .y = y };
-    }
-};
-
-const Snake = struct {
-    body: [25]?Point,
-    direction: Point,
-
-    pub fn draw(this: @This()) void {
-        for (this.body) |partopt, i| {
-            if (partopt) |part| {
-                w4.DRAW_COLORS.* = if (i == 0) 0x0034 else 0x0003;
-                w4.rect(part.x * 8, part.y * 8, 8, 8);
-            } else {
-                break;
-            }
-        }
-    }
-};
-
-var snake: Snake = .{
-    .body = .{
-        Point.new(2, 0),
-        Point.new(1, 0),
-        Point.new(0, 0),
-    } ++ .{null} ** 22,
-    .direction = Point.new(1, 0),
-};
+var snake: Snake = undefined;
+var errOpt: ?[*]const u8 = null;
 
 export fn start() void {
     w4.PALETTE.* = palettes.hallowpumpkin;
+    box.start() catch |e| {
+        errOpt = @errorName(e).ptr;
+    };
 }
 
 export fn update() void {
-    snake.draw();
+    if (errOpt) |err| {
+        w4.text(err, 0, 0);
+    } else {
+        box.update() catch |e| {
+            errOpt = @errorName(e).ptr;
+        };
+    }
 }
+
+const box = struct {
+    // So I can use stuff like try
+    fn start() !void {
+        snake = Snake.new();
+        try snake.body.append(Point.new(1, 0));
+        try snake.body.append(Point.new(2, 0));
+        try snake.body.append(Point.new(3, 0));
+    }
+
+    fn update() !void {
+        snake.draw();
+    }
+};
