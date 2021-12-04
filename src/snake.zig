@@ -13,6 +13,16 @@ pub const Snake = struct {
         };
     }
 
+    pub fn update(this: *@This()) void {
+        var body = this.body.slice();
+
+        var i = body.len - 1;
+        while (i > 0) : (i -= 1) {
+            body[i].x = body[i - 1].x;
+            body[i].y = body[i - 1].y;
+        }
+    }
+
     pub fn draw(this: @This()) void {
         for (this.body.constSlice()) |part, i| {
             w4.DRAW_COLORS.* = if (i == 0) 0x0034 else 0x0003;
