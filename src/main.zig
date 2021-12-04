@@ -1,52 +1,48 @@
 const w4 = @import("wasm4.zig");
 const palettes = @import("palettes.zig");
 
-const smiley = [8]u8{
-    0b11000011,
-    0b10000001,
-    0b00100100,
-    0b00100100,
-    0b00000000,
-    0b00100100,
-    0b10011001,
-    0b11000011,
+const Point = struct {
+    x: i32,
+    y: i32,
+
+    pub fn eq(this: @This(), other: @This()) bool {
+        return this.x == other.x and this.y == other.y;
+    }
+
+    pub fn new(x: i32, y: i32) @This() {
+        return @This(){ .x = x, .y = y };
+    }
 };
 
-const smiley2 = [8]u8{
-    0b11000011,
-    0b10000001,
-    0b00100000,
-    0b00100110,
-    0b00000000,
-    0b00100100,
-    0b10011001,
-    0b11000011,
+const Snake = struct {
+    body: [25]?Point,
+    direction: Point,
+
+    pub fn draw(this: @This()) void {
+        for (this.body) |partopt, i| {
+            if (partopt) |part| {
+                w4.DRAW_COLORS.* = if (i == 0) 0x0034 else 0x0003;
+                w4.rect(part.x * 8, part.y * 8, 8, 8);
+            } else {
+                break;
+            }
+        }
+    }
+};
+
+var snake: Snake = .{
+    .body = .{
+        Point.new(2, 0),
+        Point.new(1, 0),
+        Point.new(0, 0),
+    } ++ .{null} ** 22,
+    .direction = Point.new(1, 0),
 };
 
 export fn start() void {
-    w4.PALETTE.* = palettes.fuzzyfour;
+    w4.PALETTE.* = palettes.hallowpumpkin;
 }
 
 export fn update() void {
-    w4.DRAW_COLORS.* = 2;
-    w4.text("Hello from Zig!", 10, 10);
-
-    w4.DRAW_COLORS.* = 1;
-    w4.rect(0, 152, 8, 8);
-    w4.DRAW_COLORS.* = 2;
-    w4.rect(8, 152, 8, 8);
-    w4.DRAW_COLORS.* = 3;
-    w4.rect(16, 152, 8, 8);
-    w4.DRAW_COLORS.* = 4;
-    w4.rect(24, 152, 8, 8);
-
-    const gamepad = w4.GAMEPAD1.*;
-    if (gamepad & w4.BUTTON_1 != 0) {
-        w4.DRAW_COLORS.* = 3;
-        w4.blit(&smiley2, 76, 76, 8, 8, w4.BLIT_1BPP);
-    } else {
-        w4.blit(&smiley, 76, 76, 8, 8, w4.BLIT_1BPP);
-    }
-
-    w4.text("Press X to wink", 16, 90);
+    snake.draw();
 }
