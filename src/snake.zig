@@ -63,4 +63,14 @@ pub const Snake = struct {
             this.direction.y = 1;
         }
     }
+
+    pub fn isDead(this: @This()) bool {
+        const body = this.body.constSlice();
+        const head = body[0];
+        for (body) |part, i| {
+            if (i == 0) continue;
+            if (part.eq(head)) return true;
+        }
+        return false;
+    }
 };
