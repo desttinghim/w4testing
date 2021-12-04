@@ -5,11 +5,13 @@ const Point = @import("point.zig").Point;
 pub const Snake = struct {
     body: std.BoundedArray(Point, 4000),
     direction: Point,
+    nextDirectionOpt: ?Point,
 
     pub fn new() !@This() {
         return @This(){
             .body = try std.BoundedArray(Point, 4000).init(0),
             .direction = Point.new(1, 0),
+            .nextDirectionOpt = null,
         };
     }
 
@@ -20,6 +22,11 @@ pub const Snake = struct {
         while (i > 0) : (i -= 1) {
             body[i].x = body[i - 1].x;
             body[i].y = body[i - 1].y;
+        }
+
+        if (this.nextDirectionOpt) |nextDirection| {
+            this.direction = nextDirection;
+            this.nextDirectionOpt = null;
         }
 
         body[0].x = @mod(body[0].x + this.direction.x, 20);
@@ -38,29 +45,25 @@ pub const Snake = struct {
 
     pub fn left(this: *@This()) void {
         if (this.direction.x == 0) {
-            this.direction.x = -1;
-            this.direction.y = 0;
+            this.nextDirectionOpt = Point.new(-1, 0);
         }
     }
 
     pub fn right(this: *@This()) void {
         if (this.direction.x == 0) {
-            this.direction.x = 1;
-            this.direction.y = 0;
+            this.nextDirectionOpt = Point.new(1, 0);
         }
     }
 
     pub fn up(this: *@This()) void {
         if (this.direction.y == 0) {
-            this.direction.x = 0;
-            this.direction.y = -1;
+            this.nextDirectionOpt = Point.new(0, -1);
         }
     }
 
     pub fn down(this: *@This()) void {
         if (this.direction.y == 0) {
-            this.direction.x = 0;
-            this.direction.y = 1;
+            this.nextDirectionOpt = Point.new(0, 1);
         }
     }
 
