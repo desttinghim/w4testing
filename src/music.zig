@@ -6,62 +6,42 @@ const Event = struct {
     note: u8, // midi note
     duration: u8, // duration, fraction of a bar
 };
-const events = [_]Event{
-    // 1
-    .{ .note = cton(3, 'c'), .duration = 4 },
-    .{ .note = cton(3, 'c'), .duration = 4 },
-    .{ .note = cton(3, 'g'), .duration = 4 },
-    .{ .note = cton(3, 'g'), .duration = 4 },
-    // 2
-    .{ .note = cton(3, 'a'), .duration = 4 },
-    .{ .note = cton(3, 'a'), .duration = 4 },
-    .{ .note = cton(3, 'g'), .duration = 2 },
-    // 3
-    .{ .note = cton(3, 'f'), .duration = 4 },
-    .{ .note = cton(3, 'f'), .duration = 4 },
-    .{ .note = cton(3, 'e'), .duration = 4 },
-    .{ .note = cton(3, 'e'), .duration = 4 },
-    // 4
-    .{ .note = cton(3, 'd'), .duration = 4 },
-    .{ .note = cton(3, 'd'), .duration = 4 },
-    .{ .note = cton(3, 'c'), .duration = 2 },
-    // 5
-    .{ .note = cton(3, 'g'), .duration = 4 },
-    .{ .note = cton(3, 'g'), .duration = 4 },
-    .{ .note = cton(3, 'f'), .duration = 4 },
-    .{ .note = cton(3, 'f'), .duration = 4 },
-    // 6
-    .{ .note = cton(3, 'e'), .duration = 4 },
-    .{ .note = cton(3, 'e'), .duration = 4 },
-    .{ .note = cton(3, 'd'), .duration = 2 },
-    // 7
-    .{ .note = cton(3, 'g'), .duration = 4 },
-    .{ .note = cton(3, 'g'), .duration = 4 },
-    .{ .note = cton(3, 'f'), .duration = 4 },
-    .{ .note = cton(3, 'f'), .duration = 4 },
-    // 8
-    .{ .note = cton(3, 'e'), .duration = 4 },
-    .{ .note = cton(3, 'e'), .duration = 4 },
-    .{ .note = cton(3, 'd'), .duration = 2 },
-    // 9
-    .{ .note = cton(3, 'c'), .duration = 4 },
-    .{ .note = cton(3, 'c'), .duration = 4 },
-    .{ .note = cton(3, 'g'), .duration = 4 },
-    .{ .note = cton(3, 'g'), .duration = 4 },
-    // 10
-    .{ .note = cton(3, 'a'), .duration = 4 },
-    .{ .note = cton(3, 'a'), .duration = 4 },
-    .{ .note = cton(3, 'g'), .duration = 2 },
-    // 11
-    .{ .note = cton(3, 'f'), .duration = 4 },
-    .{ .note = cton(3, 'f'), .duration = 4 },
-    .{ .note = cton(3, 'e'), .duration = 4 },
-    .{ .note = cton(3, 'e'), .duration = 4 },
-    // 12
-    .{ .note = cton(3, 'd'), .duration = 4 },
-    .{ .note = cton(3, 'd'), .duration = 4 },
-    .{ .note = cton(3, 'c'), .duration = 2 },
-};
+const alda =
+    \\ o3
+    \\ c4 c g g | a a g2 | f4 f e e | d d c2
+    \\ g4 g f f | e e d2 | g4 g d d | e e d2
+    \\ c4 c g g | a a g2 | f4 f e e | d d c2
+;
+const events = parseAlda(42, alda) catch |e| @compileError(@errorName(e));
+
+const AldaCmd = enum { o };
+
+fn parseAlda(comptime size: comptime_int, buf: []const u8) ![]const Event {
+    @setEvalBranchQuota(3000);
+    var eventlist = try std.BoundedArray(Event, size).init(0);
+    var currentOctave = 3;
+    var currentDuration = 4;
+    var currentBeat = 0;
+    var barDivision = 64;
+    var tokIter = std.mem.tokenize(u8, buf, " \n\t");
+    while (tokIter.next()) |tok| {
+        if (tok[0] == '|') {
+            if (currentBeat % barDivision != 0) return error.BarCheckFailed else continue;
+        }
+        if (std.meta.stringToEnum(AldaCmd, tok[0..1])) |cmd| {
+            var param = try std.fmt.parseInt(u8, tok[1..tok.len], 10);
+            switch (cmd) {
+                .o => currentOctave = param,
+            }
+        } else {
+            var note = tok[0];
+            if (tok.len > 1) currentDuration = try std.fmt.parseInt(u8, tok[1..tok.len], 10);
+            currentBeat += barDivision / currentDuration;
+            try eventlist.append(Event{ .note = cton(currentOctave, note), .duration = currentDuration });
+        }
+    }
+    return eventlist.constSlice();
+}
 
 // octave
 fn octave(o: u8) u8 {
@@ -118,7 +98,7 @@ pub const Music = struct {
 
     pub fn new() @This() {
         return @This(){
-            .notes = &events,
+            .notes = events,
             .counter = 0,
             .cursor = 0,
             .next = 0,
