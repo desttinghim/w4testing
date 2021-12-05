@@ -3,7 +3,9 @@ const std = @import("std");
 const palettes = @import("palettes.zig");
 const Point = @import("point.zig").Point;
 const Snake = @import("snake.zig").Snake;
+const Music = @import("music.zig").Music;
 
+var music = Music.new();
 var snake = Snake.new() catch @panic("");
 var fruit: Point = undefined;
 var prevState: u8 = 0;
@@ -21,7 +23,7 @@ pub fn start() !void {
     isDead = false;
     random = prng.random();
     frameCount = 0;
-    w4.PALETTE.* = palettes.en4;
+    // w4.PALETTE.* = palettes.en4;
     fruit = Point.new(rnd(20), rnd(20));
     try snake.body.resize(0);
     try snake.body.append(Point.new(3, 0));
@@ -31,6 +33,8 @@ pub fn start() !void {
 
 pub fn update() !void {
     frameCount += 1;
+
+    music.update();
 
     input();
 
@@ -48,6 +52,7 @@ pub fn update() !void {
             try snake.body.append(Point.new(tail.x, tail.y));
             fruit.x = rnd(20);
             fruit.y = rnd(20);
+            w4.tone(0 | (1000 << 16), 0 | (15 << 8), 100, w4.TONE_TRIANGLE);
         }
     }
 
