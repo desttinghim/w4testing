@@ -9,7 +9,7 @@ const w4url: ?[]const u8 = null;
 const w4timestamp = false;
 
 pub fn build(b: *std.build.Builder) void {
-    const lib = b.addSharedLibrary(w4exe, "src/main.zig", .unversioned);
+    const lib = b.addSharedLibrary("cart", "src/main.zig", .unversioned);
     lib.setBuildMode(.ReleaseSafe);
     lib.setTarget(.{ .cpu_arch = .wasm32, .os_tag = .freestanding });
     lib.import_memory = true;
