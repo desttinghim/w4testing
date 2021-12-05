@@ -4,8 +4,9 @@ const palettes = @import("palettes.zig");
 const Point = @import("point.zig").Point;
 const Snake = @import("snake.zig").Snake;
 const Music = @import("music.zig").Music;
+const alda = @import("alda.zig");
 
-var music = Music.new();
+var music = Music.init(alda.parsed);
 var snake = Snake.new() catch @panic("");
 var fruit: Point = undefined;
 var prevState: u8 = 0;
