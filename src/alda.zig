@@ -3,27 +3,6 @@ const music = @import("music.zig");
 const Event = music.Event;
 const Flag = music.Flag;
 
-pub const song =
-    \\ !tempo 112
-    \\ !time 4/4
-    \\ !instrument pulse50
-    \\ o3
-    \\ (mp) c4 c g g | a a g2 | f4 f e e | d d c2
-    \\ g4 g f f | e e d2 | g4 g f f | e e d2
-    \\ c4 c g g | a a g2 | f4 f e e | d d c2
-;
-pub const parsed = parseAlda(100, song) catch |e| @compileError(@errorName(e));
-
-test "parse twinkle twinkle little star" {
-    // std.log.warn("\n{s}", .{song});
-    _ = try parseAlda(100, song);
-}
-
-test "parse sound effects" {
-    _ = try parseAlda(20, @embedFile("../assets/getFruit.txt"));
-    _ = try parseAlda(20, @embedFile("../assets/gameOver.txt"));
-}
-
 // utility functions
 const isDigit = std.ascii.isDigit;
 const toLower = std.ascii.toLower;
@@ -55,6 +34,11 @@ const TimeSignature = struct {
     pub fn ticks(this: @This(), duration: u32) u8 {
         return @intCast(u8, note2ticks(this.tempo, this.lower, duration));
     }
+
+    pub fn ticksErr(this: @This(), duration: u32) [2]u8 {
+        var res = note2ticksErr(this.tempo, this.lower, duration);
+        return .{ @intCast(u8, res[0]), @intCast(u8, res[1]) };
+    }
 };
 
 const Instrument = enum { pulse12, pulse25, pulse50, pulse75, triangle, noise };
@@ -80,6 +64,7 @@ pub fn parseAlda(comptime size: comptime_int, buf: []const u8) !std.BoundedArray
     var readToOpt: ?ReadTo = null;
 
     // timing
+    var currentErr: u32 = 0;
     var currentTick: u32 = 0;
     var time: TimeSignature = .{ .tempo = 112, .upper = 4, .lower = 4 };
 
@@ -112,7 +97,17 @@ pub fn parseAlda(comptime size: comptime_int, buf: []const u8) !std.BoundedArray
         }
         switch (toLower(tok[0])) {
             '!' => readToOpt = std.meta.stringToEnum(ReadTo, tok[1..tok.len]),
-            '|' => if (currentTick % time.bar() != 0) return error.BarCheckFailed else continue,
+            '|' => {
+                if (currentTick % time.bar() != 0) {
+                    if (currentErr > 0) {
+                        var diff = time.bar() - (currentTick % time.bar());
+                        currentTick += diff;
+                        std.log.warn("error in bar quantization differs by {} from {}", .{ diff, time.bar() });
+                        continue;
+                    }
+                    return error.BarCheckFailed;
+                } else continue;
+            },
             '<' => currentOctave = std.math.sub(u8, currentOctave, 1) catch return error.OctaveTooLow,
             '>' => currentOctave = std.math.add(u8, currentOctave, 1) catch return error.OctaveTooHigh,
             '(' => {
@@ -134,7 +129,9 @@ pub fn parseAlda(comptime size: comptime_int, buf: []const u8) !std.BoundedArray
                     }
                     // TODO: implement ties (~)
                 }
-                currentTick += time.ticks(currentDuration);
+                var tickres = time.ticksErr(currentDuration);
+                currentTick += tickres[0];
+                currentErr += tickres[1];
                 if (note_res.note) |note| {
                     try eventlist.append(Event{ .note = ntof(octave(currentOctave) + note) });
                 } else {
@@ -142,7 +139,7 @@ pub fn parseAlda(comptime size: comptime_int, buf: []const u8) !std.BoundedArray
                 }
             },
         }
-        // std.log.warn("{s} {}/{}", .{ tok, currentTick % time.bar(), time.bar() });
+        // std.log.warn("{s} {} {}/{}", .{ tok, currentTick, currentTick % time.bar(), time.bar() });
     }
     return eventlist;
 }
@@ -225,47 +222,57 @@ fn note2ticks(bpm: u32, beatValue: u32, duration: u32) u32 {
     return ticks;
 }
 
+fn note2ticksErr(bpm: u32, beatValue: u32, duration: u32) [2]u32 {
+    // whole = 240, half = 120, quarter = 60, etc.
+    const one = (beatValue * 60 * 60);
+    const two = bpm * duration;
+    const ticks = one / two;
+    const err = (@intToFloat(f32, one) / @intToFloat(f32, two)) - @intToFloat(f32, ticks);
+    return .{ ticks, @floatToInt(u32, err * 10) };
+}
+
 test "note2ticks" {
-    const assert = std.debug.assert;
+    const expectEqual = std.testing.expectEqual;
     // 225bpm, 4/4 time
-    assert(note2ticks(225, 4, 64) == 1);
-    assert(note2ticks(225, 4, 32) == 2);
-    assert(note2ticks(225, 4, 16) == 4);
-    assert(note2ticks(225, 4, 8) == 8);
-    assert(note2ticks(225, 4, 4) == 16);
-    assert(note2ticks(225, 4, 2) == 32);
-    assert(note2ticks(225, 4, 1) == 64);
+    try expectEqual(note2ticks(225, 4, 64), 1);
+    try expectEqual(note2ticks(225, 4, 32), 2);
+    try expectEqual(note2ticks(225, 4, 16), 4);
+    try expectEqual(note2ticks(225, 4, 8), 8);
+    try expectEqual(note2ticks(225, 4, 4), 16);
+    try expectEqual(note2ticks(225, 4, 2), 32);
+    try expectEqual(note2ticks(225, 4, 1), 64);
 
     // 112bpm, 4/4 time
     // Technically this is 112.5bpm, but
     // the 0.5 is lost in rounding
-    assert(note2ticks(112, 4, 64) == 2);
-    assert(note2ticks(112, 4, 32) == 4);
-    assert(note2ticks(112, 4, 16) == 8);
-    assert(note2ticks(112, 4, 8) == 16);
-    assert(note2ticks(112, 4, 4) == 32);
-    assert(note2ticks(112, 4, 2) == 64);
-    assert(note2ticks(112, 4, 1) == 128);
+    try expectEqual(note2ticks(112, 4, 64), 2);
+    try expectEqual(note2ticks(112, 4, 32), 4);
+    try expectEqual(note2ticks(112, 4, 16), 8);
+    try expectEqual(note2ticks(112, 4, 8), 16);
+    try expectEqual(note2ticksErr(112, 4, 6), .{ 21, 4 }); // triplet quarter note
+    try expectEqual(note2ticks(112, 4, 4), 32);
+    try expectEqual(note2ticks(112, 4, 2), 64);
+    try expectEqual(note2ticks(112, 4, 1), 128);
 
     // 75bpm, 4/4 time
-    assert(note2ticks(75, 4, 64) == 3);
-    assert(note2ticks(75, 4, 32) == 6);
-    assert(note2ticks(75, 4, 16) == 12);
-    assert(note2ticks(75, 4, 8) == 24);
-    assert(note2ticks(75, 4, 4) == 48);
-    assert(note2ticks(75, 4, 2) == 96);
-    assert(note2ticks(75, 4, 1) == 192);
+    try expectEqual(note2ticks(75, 4, 64), 3);
+    try expectEqual(note2ticks(75, 4, 32), 6);
+    try expectEqual(note2ticks(75, 4, 16), 12);
+    try expectEqual(note2ticks(75, 4, 8), 24);
+    try expectEqual(note2ticks(75, 4, 4), 48);
+    try expectEqual(note2ticks(75, 4, 2), 96);
+    try expectEqual(note2ticks(75, 4, 1), 192);
 
     // 120bpm, 4/4 time
-    assert(note2ticks(120, 4, 1) == 120); // whole note = 120 frames
-    assert(note2ticks(120, 4, 2) == 60); // whole note = 60 frames
-    assert(note2ticks(120, 4, 4) == 30); // quarter note = 30 frames
-    assert(note2ticks(120, 4, 8) == 15); // eighth note = 15 frames
+    try expectEqual(note2ticks(120, 4, 1), 120); // whole note = 120 frames
+    try expectEqual(note2ticks(120, 4, 2), 60); // whole note = 60 frames
+    try expectEqual(note2ticks(120, 4, 4), 30); // quarter note = 30 frames
+    try expectEqual(note2ticks(120, 4, 8), 15); // eighth note = 15 frames
     // Any lower values are inexact. I'm going to not think about them for now...
     // TODO: figure out how faster notes will be handled
-    // assert(note2ticks(120, 4, 16) == 7.5);    // sixteenth note = 7 frames (inexact)
-    // assert(note2ticks(120, 4, 32) == 3.75);  // thirty-second note =  frames
+    // expectEqual(note2ticks(120, 4, 16) , 7.5);    // sixteenth note = 7 frames (inexact)
+    // expectEqual(note2ticks(120, 4, 32) , 3.75);  // thirty-second note =  frames
 
     // 60bpm, 4/4 time
-    assert(note2ticks(60, 4, 4) == 60); // quarter note = 60 frames
+    try expectEqual(note2ticks(60, 4, 4), 60); // quarter note = 60 frames
 }
