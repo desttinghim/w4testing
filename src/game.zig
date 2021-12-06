@@ -3,10 +3,15 @@ const std = @import("std");
 const palettes = @import("palettes.zig");
 const Point = @import("point.zig").Point;
 const Snake = @import("snake.zig").Snake;
-const Music = @import("music.zig").Music;
+const m = @import("music.zig");
+const Music = m.Music;
+const Event = m.Event;
 const alda = @import("alda.zig");
 
-var music = Music.init(alda.parsed);
+var gameOver: []const Event = undefined;
+var getFruit: []const Event = undefined;
+
+var music = Music.init();
 var snake = Snake.new() catch @panic("");
 var fruit: Point = undefined;
 var prevState: u8 = 0;
@@ -30,6 +35,10 @@ pub fn start() !void {
     try snake.body.append(Point.new(3, 0));
     try snake.body.append(Point.new(2, 0));
     try snake.body.append(Point.new(1, 0));
+    var gameOverBoundedArray = try alda.parseAlda(30, @embedFile("../assets/gameOver.txt"));
+    gameOver = gameOverBoundedArray.constSlice();
+    var getFruitBoundedArray = try alda.parseAlda(20, @embedFile("../assets/getFruit.txt"));
+    getFruit = getFruitBoundedArray.constSlice();
 }
 
 pub fn update() !void {
@@ -45,7 +54,9 @@ pub fn update() !void {
             snake.update();
         }
 
-        isDead = snake.isDead();
+        var checkDead = snake.isDead();
+        if (checkDead and !isDead) music.playSong(gameOver);
+        isDead = checkDead;
 
         const body = snake.body.constSlice();
         if (body[0].eq(fruit)) {
@@ -53,7 +64,8 @@ pub fn update() !void {
             try snake.body.append(Point.new(tail.x, tail.y));
             fruit.x = rnd(20);
             fruit.y = rnd(20);
-            w4.tone(0 | (1000 << 16), 0 | (15 << 8), 100, w4.TONE_TRIANGLE);
+            music.playSong(getFruit);
+            // w4.tone(0 | (1000 << 16), 0 | (15 << 8), 100, w4.TONE_TRIANGLE);
         }
     }
 

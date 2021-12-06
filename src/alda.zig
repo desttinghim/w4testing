@@ -14,36 +14,14 @@ pub const song =
 ;
 pub const parsed = parseAlda(100, song) catch |e| @compileError(@errorName(e));
 
-test "parse twinkle twinkle little start" {
-    std.log.warn("\n{s}", .{song});
-    var testParsedSong = try parseAlda(100, song);
-    // Every time I print this stuff out the order seems to change. I have no clue
-    // why, but it seems questionable to me
-    // for (testParsedSong) |event| {
-    //     switch (event) {
-    //         .rest => {
-    //             std.log.warn("rest", .{});
-    //         },
-    //         .flag => |flag| {
-    //             std.log.warn("flag\t{}", .{flag});
-    //         },
-    //         .ad => |ad| {
-    //             std.log.warn("ad\t{}, {}", .{ ad.attack, ad.decay });
-    //         },
-    //         .sr => |sr| {
-    //             std.log.warn("sr\t{}, {}", .{ sr.sustain, sr.release });
-    //         },
-    //         .vol => |vol| {
-    //             std.log.warn("vol\t{}", .{vol});
-    //         },
-    //         .slide => |slide| {
-    //             std.log.warn("slide\t{}", .{slide});
-    //         },
-    //         .note => |note| {
-    //             std.log.warn("note\t{}", .{note});
-    //         },
-    //     }
-    // }
+test "parse twinkle twinkle little star" {
+    // std.log.warn("\n{s}", .{song});
+    _ = try parseAlda(100, song);
+}
+
+test "parse sound effects" {
+    _ = try parseAlda(20, @embedFile("../assets/getFruit.txt"));
+    _ = try parseAlda(20, @embedFile("../assets/gameOver.txt"));
 }
 
 // utility functions
@@ -71,7 +49,7 @@ const TimeSignature = struct {
 
     /// Returns the length of a bar in ticks
     pub fn bar(this: @This()) u32 {
-        return note2ticks(this.tempo, this.lower, 1);
+        return note2ticks(this.tempo, this.upper, 1);
     }
 
     pub fn ticks(this: @This(), duration: u32) u8 {
@@ -91,7 +69,7 @@ const Instrument = enum { pulse12, pulse25, pulse50, pulse75, triangle, noise };
 /// (note)~(note)
 /// ![keyword] value
 /// :[instrument]
-fn parseAlda(comptime size: comptime_int, buf: []const u8) ![]const Event {
+pub fn parseAlda(comptime size: comptime_int, buf: []const u8) !std.BoundedArray(Event, size) {
     @setEvalBranchQuota(4000);
     var eventlist = try std.BoundedArray(Event, size).init(0);
     // registers
@@ -135,8 +113,8 @@ fn parseAlda(comptime size: comptime_int, buf: []const u8) ![]const Event {
         switch (toLower(tok[0])) {
             '!' => readToOpt = std.meta.stringToEnum(ReadTo, tok[1..tok.len]),
             '|' => if (currentTick % time.bar() != 0) return error.BarCheckFailed else continue,
-            '<' => _ = std.math.sub(u8, currentOctave, 1) catch return error.OctaveTooLow,
-            '>' => _ = std.math.add(u8, currentOctave, 1) catch return error.OctaveTooHigh,
+            '<' => currentOctave = std.math.sub(u8, currentOctave, 1) catch return error.OctaveTooLow,
+            '>' => currentOctave = std.math.add(u8, currentOctave, 1) catch return error.OctaveTooHigh,
             '(' => {
                 currentDynamic = std.meta.stringToEnum(Dynamic, tok[1 .. tok.len - 1]) orelse return error.InvalidDynamic;
                 try eventlist.append(Event{ .vol = @enumToInt(currentDynamic) });
@@ -164,8 +142,9 @@ fn parseAlda(comptime size: comptime_int, buf: []const u8) ![]const Event {
                 }
             },
         }
+        // std.log.warn("{s} {}/{}", .{ tok, currentTick % time.bar(), time.bar() });
     }
-    return eventlist.constSlice();
+    return eventlist;
 }
 
 const NoteRes = struct { note: ?u8, end: usize };

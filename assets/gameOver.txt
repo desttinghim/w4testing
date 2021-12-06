@@ -1,0 +1,5 @@
+!tempo 75
+!time 2/4
+!instrument triangle
+o3 (mp)
+b4 > f8 c | a4 < g | > > g4 a8 d | > g2

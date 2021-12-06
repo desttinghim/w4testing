@@ -29,7 +29,7 @@ pub const Event = union(enum) {
 
 pub const Music = struct {
     /// List of events that define the song
-    song: []const Event,
+    song: []const Event = &[_]Event{},
     /// Internal counter for timing
     counter: u32 = 0,
     /// Next tick to process commands at
@@ -52,9 +52,9 @@ pub const Music = struct {
     /// If set, used for note slide
     freq: ?u16 = null,
 
-    pub fn init(song: []const Event) @This() {
+    pub fn init() @This() {
         return @This(){
-            .song = song,
+            // .song = song,
         };
     }
 
@@ -69,7 +69,7 @@ pub const Music = struct {
         this.freq = null;
     }
 
-    pub fn setSong(this: *@This(), song: []const Event) void {
+    pub fn playSong(this: *@This(), song: []const Event) void {
         this.reset();
         this.song = song;
     }
@@ -77,6 +77,8 @@ pub const Music = struct {
     pub fn update(this: *@This()) void {
         // Increment counter at end of function
         defer this.counter += 1;
+        // Stop once the end of the song is reached
+        if (this.cursor >= this.song.len) return;
         // Get current event
         var event = this.song[this.cursor];
         // Wait to play note until current note finishes
@@ -113,7 +115,7 @@ pub const Music = struct {
                     this.next = this.counter + this.duration;
                 },
             }
-            this.cursor = (this.cursor + 1) % this.song.len;
+            this.cursor = (this.cursor + 1);
         }
     }
 };
