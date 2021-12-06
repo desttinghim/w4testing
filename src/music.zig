@@ -42,13 +42,13 @@ pub const Music = struct {
     /// Bit Format:
     /// x = unused, m = mode, c = channel
     /// xxxxmmcc
-    flags: u8 = 0,
+    flags: u8 = w4.TONE_PULSE1 | w4.TONE_MODE2,
     /// Bit Format:
     /// a = attack, d = decay, r = release, s = sustain
     /// aaaaaaaa dddddddd rrrrrrrr ssssssss
     duration: u32 = 0,
     /// Values can range from 0 to 100
-    volume: u8 = 0,
+    volume: u8 = 50,
     /// If set, used for note slide
     freq: ?u16 = null,
 
@@ -85,17 +85,17 @@ pub const Music = struct {
             event = this.song[this.cursor];
             switch (event) {
                 .flag => |flag| {
-                    w4.trace("flag");
+                    // w4.trace("flag");
                     this.flags = flag;
                 },
                 .ad => |ad| {
-                    w4.trace("ad");
+                    // w4.trace("ad");
                     this.duration &= 0x0000FFFF; // clear bits
                     this.duration |= @intCast(u32, ad.attack) << 24;
                     this.duration |= @intCast(u32, ad.decay) << 16;
                 },
                 .sr => |sr| {
-                    w4.trace("sr");
+                    // w4.trace("sr");
                     this.duration &= 0xFFFF0000; // clear bits
                     this.duration |= @intCast(u32, sr.release) << 8;
                     this.duration |= @intCast(u32, sr.sustain);
@@ -103,11 +103,11 @@ pub const Music = struct {
                 .vol => |vol| this.volume = vol,
                 .slide => |freq| this.freq = freq,
                 .rest => {
-                    w4.trace("rest");
+                    // w4.trace("rest");
                     this.next = this.counter + this.duration;
                 },
                 .note => |note| {
-                    w4.trace("note");
+                    // w4.trace("note");
                     var freq = if (this.freq) |freq| freq | (note << 8) else note;
                     w4.tone(freq, this.duration, this.volume, this.flags);
                     this.next = this.counter + this.duration;

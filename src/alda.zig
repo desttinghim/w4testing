@@ -5,7 +5,7 @@ const Event = music.Event;
 pub const song =
     \\ o3
     \\ c4 c g g | a a g2 | f4 f e e | d d c2
-    \\ g4 g f f | e e d2 | g4 g d d | e e d2
+    \\ g4 g f f | e e d2 | g4 g f f | e e d2
     \\ c4 c g g | a a g2 | f4 f e e | d d c2
 ;
 pub const parsed = parseAlda(100, song) catch |e| @compileError(@errorName(e));
@@ -88,7 +88,7 @@ fn parseAlda(comptime size: comptime_int, buf: []const u8) ![]const Event {
                 }
                 currentTick += time.ticks(currentDuration);
                 if (note_res.note) |note| {
-                    try eventlist.append(Event{ .note = ntof(currentOctave + note) });
+                    try eventlist.append(Event{ .note = ntof(octave(currentOctave) + note) });
                 } else {
                     try eventlist.append(Event.rest);
                 }
