@@ -81,32 +81,39 @@ pub const Music = struct {
         var event = this.song[this.cursor];
         // Wait to play note until current note finishes
         if (event == .note and this.counter < this.next) return;
-        switch (event) {
-            .flag => |flag| {
-                this.flags = flag;
-            },
-            .ad => |ad| {
-                this.duration &= 0x0000FFFF; // clear bits
-                this.duration |= @intCast(u32, ad.attack) << 24;
-                this.duration |= @intCast(u32, ad.decay) << 16;
-            },
-            .sr => |sr| {
-                this.duration &= 0xFFFF0000; // clear bits
-                this.duration |= @intCast(u32, sr.release) << 8;
-                this.duration |= @intCast(u32, sr.sustain);
-            },
-            .vol => |vol| this.volume = vol,
-            .slide => |freq| this.freq = freq,
-            .rest => {
-                this.next = this.counter + this.duration;
-                this.cursor = (this.cursor + 1) % this.song.len;
-            },
-            .note => |note| {
-                var freq = if (this.freq) |freq| freq | (note << 8) else note;
-                w4.tone(freq, this.duration, this.volume, this.flags);
-                this.next = this.counter + this.duration;
-                this.cursor = (this.cursor + 1) % this.song.len;
-            },
+        while (this.next <= this.counter) {
+            event = this.song[this.cursor];
+            switch (event) {
+                .flag => |flag| {
+                    w4.trace("flag");
+                    this.flags = flag;
+                },
+                .ad => |ad| {
+                    w4.trace("ad");
+                    this.duration &= 0x0000FFFF; // clear bits
+                    this.duration |= @intCast(u32, ad.attack) << 24;
+                    this.duration |= @intCast(u32, ad.decay) << 16;
+                },
+                .sr => |sr| {
+                    w4.trace("sr");
+                    this.duration &= 0xFFFF0000; // clear bits
+                    this.duration |= @intCast(u32, sr.release) << 8;
+                    this.duration |= @intCast(u32, sr.sustain);
+                },
+                .vol => |vol| this.volume = vol,
+                .slide => |freq| this.freq = freq,
+                .rest => {
+                    w4.trace("rest");
+                    this.next = this.counter + this.duration;
+                },
+                .note => |note| {
+                    w4.trace("note");
+                    var freq = if (this.freq) |freq| freq | (note << 8) else note;
+                    w4.tone(freq, this.duration, this.volume, this.flags);
+                    this.next = this.counter + this.duration;
+                },
+            }
+            this.cursor = (this.cursor + 1) % this.song.len;
         }
     }
 };
