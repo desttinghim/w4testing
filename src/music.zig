@@ -12,6 +12,7 @@ pub const Flag = enum(u8) {
     Mode4 = w4.TONE_MODE4,
 };
 pub const Event = union(enum) {
+    rest: void,
     /// Sets flag register
     flag: u8,
     /// Sets attack and decay registers
@@ -86,21 +87,25 @@ pub const Music = struct {
             },
             .ad => |ad| {
                 this.duration &= 0x0000FFFF; // clear bits
-                this.duration |= ad.attack << 24;
-                this.duration |= ad.decay << 16;
+                this.duration |= @intCast(u32, ad.attack) << 24;
+                this.duration |= @intCast(u32, ad.decay) << 16;
             },
             .sr => |sr| {
                 this.duration &= 0xFFFF0000; // clear bits
-                this.duration |= sr.release << 8;
-                this.duration |= sr.sustain;
+                this.duration |= @intCast(u32, sr.release) << 8;
+                this.duration |= @intCast(u32, sr.sustain);
             },
             .vol => |vol| this.volume = vol,
             .slide => |freq| this.freq = freq,
+            .rest => {
+                this.next = this.counter + this.duration;
+                this.cursor = (this.cursor + 1) % this.song.len;
+            },
             .note => |note| {
                 var freq = if (this.freq) |freq| freq | (note << 8) else note;
                 w4.tone(freq, this.duration, this.volume, this.flags);
                 this.next = this.counter + this.duration;
-                this.cursor = (this.cursor + 1) % this.notes.len;
+                this.cursor = (this.cursor + 1) % this.song.len;
             },
         }
     }

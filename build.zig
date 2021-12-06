@@ -9,6 +9,10 @@ const w4url: ?[]const u8 = null;
 const w4timestamp = false;
 
 pub fn build(b: *std.build.Builder) void {
+    const run_test = b.addTest("src/test.zig");
+    const test_step = b.step("test", "Run tests");
+    test_step.dependOn(&run_test.step);
+
     const lib = b.addSharedLibrary("cart", "src/main.zig", .unversioned);
     lib.setBuildMode(.ReleaseSafe);
     lib.setTarget(.{ .cpu_arch = .wasm32, .os_tag = .freestanding });
