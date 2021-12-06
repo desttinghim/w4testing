@@ -1,17 +1,33 @@
 const std = @import("std");
 const music = @import("music.zig");
 const Event = music.Event;
+const Flag = music.Flag;
 
 pub const song =
+    \\ !tempo 112
+    \\ !time 4/4
+    \\ !instrument pulse50
     \\ o3
-    \\ c4 c g g | a a g2 | f4 f e e | d d c2
+    \\ (mp) c4 c g g | a a g2 | f4 f e e | d d c2
     \\ g4 g f f | e e d2 | g4 g f f | e e d2
     \\ c4 c g g | a a g2 | f4 f e e | d d c2
 ;
 pub const parsed = parseAlda(100, song) catch |e| @compileError(@errorName(e));
 
-pub fn parseTheSong() !void {
-    _ = try parseAlda(100, song);
+test "parse song" {
+    var testParsedSong = try parseAlda(100, song);
+    for (testParsedSong) |event| {
+        switch (event) {
+            .rest => {},
+            .flag => {},
+            .ad => {},
+            .sr => {},
+            .vol => {},
+            .slide => {},
+            .note => {},
+        }
+        std.log.warn("{any}", .{event});
+    }
 }
 
 // utility functions
@@ -19,12 +35,23 @@ const isDigit = std.ascii.isDigit;
 const toLower = std.ascii.toLower;
 
 /// Read locations
-const ReadTo = enum { time, tempo };
+const ReadTo = enum { time, tempo, instrument };
+
+const Dynamic = enum(u8) { pp = 1, p = 3, mp = 6, mf = 12, f = 25, ff = 50, fff = 100 };
 
 const TimeSignature = struct {
     tempo: u8,
     upper: u8,
     lower: u8,
+
+    pub fn setSig(this: *@This(), upper: u8, lower: u8) void {
+        this.upper = upper;
+        this.lower = lower;
+    }
+
+    pub fn setTempo(this: *@This(), tempo: u8) void {
+        this.tempo = tempo;
+    }
 
     /// Returns the length of a bar in ticks
     pub fn bar(this: @This()) u32 {
@@ -36,8 +63,7 @@ const TimeSignature = struct {
     }
 };
 
-// TODO: make different instruments
-// const Instrument = enum {pulse12, pulse25, pulse50, pulse75, triangle, noise};
+const Instrument = enum { pulse12, pulse25, pulse50, pulse75, triangle, noise };
 
 /// Supports the following:
 /// duration = [1 to 64][.]
@@ -50,11 +76,13 @@ const TimeSignature = struct {
 /// ![keyword] value
 /// :[instrument]
 fn parseAlda(comptime size: comptime_int, buf: []const u8) ![]const Event {
-    @setEvalBranchQuota(3000);
+    @setEvalBranchQuota(4000);
     var eventlist = try std.BoundedArray(Event, size).init(0);
     // registers
     var currentOctave: u8 = 3;
     var currentDuration: u8 = 4;
+    var currentDynamic: Dynamic = .mp;
+    var currentInstrument: Instrument = .pulse12;
     var readToOpt: ?ReadTo = null;
 
     // timing
@@ -63,14 +91,40 @@ fn parseAlda(comptime size: comptime_int, buf: []const u8) ![]const Event {
 
     var tokIter = std.mem.tokenize(u8, buf, " \n\t");
     while (tokIter.next()) |tok| {
-        if (readToOpt) |_| {
+        if (readToOpt) |readTo| {
             // TODO: Implement setting variables
+            switch (readTo) {
+                .time => {
+                    time.setSig(tok[0] - '0', tok[2] - '0');
+                },
+                .tempo => {
+                    time.setTempo(try std.fmt.parseInt(u8, tok, 10));
+                },
+                .instrument => {
+                    currentInstrument = std.meta.stringToEnum(Instrument, tok) orelse return error.UnknownInstrument;
+                    var flag = switch (currentInstrument) {
+                        .pulse12 => Flag.Pulse1 | Flag.Mode1,
+                        .pulse25 => Flag.Pulse1 | Flag.Mode2,
+                        .pulse50 => Flag.Pulse1 | Flag.Mode3,
+                        .pulse75 => Flag.Pulse1 | Flag.Mode4,
+                        .triangle => Flag.Triangle,
+                        .noise => Flag.Noise,
+                    };
+                    try eventlist.append(Event{ .flag = flag });
+                },
+            }
+            readToOpt = null;
+            continue;
         }
         switch (toLower(tok[0])) {
             '!' => readToOpt = std.meta.stringToEnum(ReadTo, tok[1..tok.len]),
             '|' => if (currentTick % time.bar() != 0) return error.BarCheckFailed else continue,
             '<' => _ = std.math.sub(u8, currentOctave, 1) catch return error.OctaveTooLow,
             '>' => _ = std.math.add(u8, currentOctave, 1) catch return error.OctaveTooHigh,
+            '(' => {
+                currentDynamic = std.meta.stringToEnum(Dynamic, tok[1 .. tok.len - 1]) orelse return error.InvalidDynamic;
+                try eventlist.append(Event{ .vol = @enumToInt(currentDynamic) });
+            },
             'o' => if (tok.len > 1) {
                 currentOctave = (tok[1] - '0');
             } else return error.MissingOctaveNumber,
