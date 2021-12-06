@@ -2,14 +2,14 @@ const w4 = @import("wasm4.zig");
 const std = @import("std");
 
 pub const Flag = struct {
-    pub const Pulse1 = w4.TONE_PULSE1;
-    pub const Pulse2 = w4.TONE_PULSE2;
-    pub const Triangle = w4.TONE_TRIANGLE;
-    pub const Noise = w4.TONE_NOISE;
-    pub const Mode1 = w4.TONE_MODE1;
-    pub const Mode2 = w4.TONE_MODE2;
-    pub const Mode3 = w4.TONE_MODE3;
-    pub const Mode4 = w4.TONE_MODE4;
+    pub const Pulse1: u8 = w4.TONE_PULSE1;
+    pub const Pulse2: u8 = w4.TONE_PULSE2;
+    pub const Triangle: u8 = w4.TONE_TRIANGLE;
+    pub const Noise: u8 = w4.TONE_NOISE;
+    pub const Mode1: u8 = w4.TONE_MODE1;
+    pub const Mode2: u8 = w4.TONE_MODE2;
+    pub const Mode3: u8 = w4.TONE_MODE3;
+    pub const Mode4: u8 = w4.TONE_MODE4;
 };
 pub const Event = union(enum) {
     rest: void,

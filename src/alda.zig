@@ -14,20 +14,36 @@ pub const song =
 ;
 pub const parsed = parseAlda(100, song) catch |e| @compileError(@errorName(e));
 
-test "parse song" {
+test "parse twinkle twinkle little start" {
+    std.log.warn("\n{s}", .{song});
     var testParsedSong = try parseAlda(100, song);
-    for (testParsedSong) |event| {
-        switch (event) {
-            .rest => {},
-            .flag => {},
-            .ad => {},
-            .sr => {},
-            .vol => {},
-            .slide => {},
-            .note => {},
-        }
-        std.log.warn("{any}", .{event});
-    }
+    // Every time I print this stuff out the order seems to change. I have no clue
+    // why, but it seems questionable to me
+    // for (testParsedSong) |event| {
+    //     switch (event) {
+    //         .rest => {
+    //             std.log.warn("rest", .{});
+    //         },
+    //         .flag => |flag| {
+    //             std.log.warn("flag\t{}", .{flag});
+    //         },
+    //         .ad => |ad| {
+    //             std.log.warn("ad\t{}, {}", .{ ad.attack, ad.decay });
+    //         },
+    //         .sr => |sr| {
+    //             std.log.warn("sr\t{}, {}", .{ sr.sustain, sr.release });
+    //         },
+    //         .vol => |vol| {
+    //             std.log.warn("vol\t{}", .{vol});
+    //         },
+    //         .slide => |slide| {
+    //             std.log.warn("slide\t{}", .{slide});
+    //         },
+    //         .note => |note| {
+    //             std.log.warn("note\t{}", .{note});
+    //         },
+    //     }
+    // }
 }
 
 // utility functions
