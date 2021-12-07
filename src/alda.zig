@@ -68,78 +68,82 @@ pub fn parseAlda(comptime size: comptime_int, buf: []const u8) !std.BoundedArray
     var currentTick: u32 = 0;
     var time: TimeSignature = .{ .tempo = 112, .upper = 4, .lower = 4 };
 
-    var tokIter = std.mem.tokenize(u8, buf, " \n\t");
-    while (tokIter.next()) |tok| {
-        if (readToOpt) |readTo| {
-            // TODO: Implement setting variables
-            switch (readTo) {
-                .time => {
-                    time.setSig(tok[0] - '0', tok[2] - '0');
+    var lineIter = std.mem.split(u8, buf, "\n");
+    lineparse: while (lineIter.next()) |line| {
+        var tokIter = std.mem.tokenize(u8, line, " \n\t");
+        while (tokIter.next()) |tok| {
+            if (readToOpt) |readTo| {
+                // TODO: Implement setting variables
+                switch (readTo) {
+                    .time => {
+                        time.setSig(tok[0] - '0', tok[2] - '0');
+                    },
+                    .tempo => {
+                        time.setTempo(try std.fmt.parseInt(u8, tok, 10));
+                    },
+                    .instrument => {
+                        currentInstrument = std.meta.stringToEnum(Instrument, tok) orelse return error.UnknownInstrument;
+                        var flag = switch (currentInstrument) {
+                            .pulse12 => Flag.Pulse1 | Flag.Mode1,
+                            .pulse25 => Flag.Pulse1 | Flag.Mode2,
+                            .pulse50 => Flag.Pulse1 | Flag.Mode3,
+                            .pulse75 => Flag.Pulse1 | Flag.Mode4,
+                            .triangle => Flag.Triangle,
+                            .noise => Flag.Noise,
+                        };
+                        try eventlist.append(Event{ .flag = flag });
+                    },
+                }
+                readToOpt = null;
+                continue;
+            }
+            switch (toLower(tok[0])) {
+                '#' => continue :lineparse,
+                '!' => readToOpt = std.meta.stringToEnum(ReadTo, tok[1..tok.len]),
+                '|' => {
+                    if (currentTick % time.bar() != 0) {
+                        if (currentErr > 0) {
+                            var diff = time.bar() - (currentTick % time.bar());
+                            currentTick += diff;
+                            std.log.warn("error in bar quantization differs by {} from {}", .{ diff, time.bar() });
+                            continue;
+                        }
+                        return error.BarCheckFailed;
+                    } else continue;
                 },
-                .tempo => {
-                    time.setTempo(try std.fmt.parseInt(u8, tok, 10));
+                '<' => currentOctave = std.math.sub(u8, currentOctave, 1) catch return error.OctaveTooLow,
+                '>' => currentOctave = std.math.add(u8, currentOctave, 1) catch return error.OctaveTooHigh,
+                '(' => {
+                    currentDynamic = std.meta.stringToEnum(Dynamic, tok[1 .. tok.len - 1]) orelse return error.InvalidDynamic;
+                    try eventlist.append(Event{ .vol = @enumToInt(currentDynamic) });
                 },
-                .instrument => {
-                    currentInstrument = std.meta.stringToEnum(Instrument, tok) orelse return error.UnknownInstrument;
-                    var flag = switch (currentInstrument) {
-                        .pulse12 => Flag.Pulse1 | Flag.Mode1,
-                        .pulse25 => Flag.Pulse1 | Flag.Mode2,
-                        .pulse50 => Flag.Pulse1 | Flag.Mode3,
-                        .pulse75 => Flag.Pulse1 | Flag.Mode4,
-                        .triangle => Flag.Triangle,
-                        .noise => Flag.Noise,
-                    };
-                    try eventlist.append(Event{ .flag = flag });
+                'o' => if (tok.len > 1) {
+                    currentOctave = (tok[1] - '0');
+                } else return error.MissingOctaveNumber,
+                else => {
+                    var note_res = try parseNote(tok);
+                    if (tok.len > 1 and note_res.end != tok.len) {
+                        var duration_res = try parseDuration(tok[note_res.end + 1 .. tok.len]);
+                        if (duration_res.duration != 0 and duration_res.end > 0) {
+                            currentDuration = duration_res.duration;
+                            var ticks = time.ticks(currentDuration);
+                            // TODO: change adsr based on instrument
+                            try eventlist.append(Event{ .sr = .{ .sustain = ticks, .release = 0 } });
+                        }
+                        // TODO: implement ties (~)
+                    }
+                    var tickres = time.ticksErr(currentDuration);
+                    currentTick += tickres[0];
+                    currentErr += tickres[1];
+                    if (note_res.note) |note| {
+                        try eventlist.append(Event{ .note = ntof(octave(currentOctave) + note) });
+                    } else {
+                        try eventlist.append(Event.rest);
+                    }
                 },
             }
-            readToOpt = null;
-            continue;
+            // std.log.warn("{s} {} {}/{}", .{ tok, currentTick, currentTick % time.bar(), time.bar() });
         }
-        switch (toLower(tok[0])) {
-            '!' => readToOpt = std.meta.stringToEnum(ReadTo, tok[1..tok.len]),
-            '|' => {
-                if (currentTick % time.bar() != 0) {
-                    if (currentErr > 0) {
-                        var diff = time.bar() - (currentTick % time.bar());
-                        currentTick += diff;
-                        std.log.warn("error in bar quantization differs by {} from {}", .{ diff, time.bar() });
-                        continue;
-                    }
-                    return error.BarCheckFailed;
-                } else continue;
-            },
-            '<' => currentOctave = std.math.sub(u8, currentOctave, 1) catch return error.OctaveTooLow,
-            '>' => currentOctave = std.math.add(u8, currentOctave, 1) catch return error.OctaveTooHigh,
-            '(' => {
-                currentDynamic = std.meta.stringToEnum(Dynamic, tok[1 .. tok.len - 1]) orelse return error.InvalidDynamic;
-                try eventlist.append(Event{ .vol = @enumToInt(currentDynamic) });
-            },
-            'o' => if (tok.len > 1) {
-                currentOctave = (tok[1] - '0');
-            } else return error.MissingOctaveNumber,
-            else => {
-                var note_res = try parseNote(tok);
-                if (tok.len > 1 and note_res.end != tok.len) {
-                    var duration_res = try parseDuration(tok[note_res.end + 1 .. tok.len]);
-                    if (duration_res.duration != 0 and duration_res.end > 0) {
-                        currentDuration = duration_res.duration;
-                        var ticks = time.ticks(currentDuration);
-                        // TODO: change adsr based on instrument
-                        try eventlist.append(Event{ .sr = .{ .sustain = ticks, .release = 0 } });
-                    }
-                    // TODO: implement ties (~)
-                }
-                var tickres = time.ticksErr(currentDuration);
-                currentTick += tickres[0];
-                currentErr += tickres[1];
-                if (note_res.note) |note| {
-                    try eventlist.append(Event{ .note = ntof(octave(currentOctave) + note) });
-                } else {
-                    try eventlist.append(Event.rest);
-                }
-            },
-        }
-        // std.log.warn("{s} {} {}/{}", .{ tok, currentTick, currentTick % time.bar(), time.bar() });
     }
     return eventlist;
 }
