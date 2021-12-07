@@ -56,7 +56,7 @@ pub const Song = struct {
 
     pub fn init() !@This() {
         return @This(){
-            .beginning = .{ 0, 0, 0, 0 },
+            .beginning = .{ listSize, listSize, listSize, listSize },
             .section = try BoundedArray(u16, 16).init(0),
             .events = try BoundedArray(Event, listSize).init(0),
         };
@@ -114,6 +114,9 @@ pub const WAE = struct {
     pub fn playSong(this: *@This(), song: *Song) void {
         this.reset();
         this.song = song;
+        for (song.beginning) |b, i| {
+            this.cursor[i] = b;
+        }
     }
 
     const ChannelState = struct {

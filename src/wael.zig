@@ -186,9 +186,12 @@ pub fn parse(buf: []const u8) !Song {
                             // Store goto details for future reference
                             const i = @enumToInt(channel);
                             sectionGotos[i] = @intCast(u16, song.events.len - 1);
+                        } else {
+                            const channel = std.meta.stringToEnum(CursorChannel, tok) orelse return error.UknownChannel;
+                            currentChannel = channel;
+                            var i = @enumToInt(channel);
+                            song.beginning[i] = @intCast(u16, song.events.len);
                         }
-                        currentChannel = std.meta.stringToEnum(CursorChannel, tok) orelse return error.UknownChannel;
-                        // TODO: change beginning or section
                     },
                     .mode => {
                         if (currentChannel) |channel| {
