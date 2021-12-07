@@ -1,5 +1,7 @@
 !tempo 112
 !time 2/4
-!instrument pulse50
+!channel p1
+!mode 2
+
 o4 (mp)
 a4 f8 c | a4 e | g4 g12 a > d | g2

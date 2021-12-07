@@ -3,15 +3,17 @@ const std = @import("std");
 const palettes = @import("palettes.zig");
 const Point = @import("point.zig").Point;
 const Snake = @import("snake.zig").Snake;
-const m = @import("music.zig");
-const Music = m.Music;
-const Event = m.Event;
-const alda = @import("alda.zig");
+const music = @import("music.zig");
+const WAE = music.WAE;
+const Song = music.Song;
+const wael = @import("wael.zig");
 
-var gameOver: []const Event = undefined;
-var getFruit: []const Event = undefined;
+var gameOverVal: Song = undefined;
+var gameOver: *Song = undefined;
+var getFruitVal: Song = undefined;
+var getFruit: *Song = undefined;
 
-var music = Music.init();
+var wae = WAE.init();
 var snake = Snake.new() catch @panic("");
 var fruit: Point = undefined;
 var prevState: u8 = 0;
@@ -35,16 +37,16 @@ pub fn start() !void {
     try snake.body.append(Point.new(3, 0));
     try snake.body.append(Point.new(2, 0));
     try snake.body.append(Point.new(1, 0));
-    var gameOverBoundedArray = try alda.parseAlda(30, @embedFile("../assets/gameOver.txt"));
-    gameOver = gameOverBoundedArray.constSlice();
-    var getFruitBoundedArray = try alda.parseAlda(20, @embedFile("../assets/getFruit.txt"));
-    getFruit = getFruitBoundedArray.constSlice();
+    gameOverVal = comptime try wael.parse(@embedFile("../assets/gameOver.txt"));
+    gameOver = &gameOverVal;
+    getFruitVal = comptime try wael.parse(@embedFile("../assets/getFruit.txt"));
+    getFruit = &getFruitVal;
 }
 
 pub fn update() !void {
     frameCount += 1;
 
-    music.update();
+    wae.update();
 
     input();
 
@@ -55,7 +57,7 @@ pub fn update() !void {
         }
 
         var checkDead = snake.isDead();
-        if (checkDead and !isDead) music.playSong(gameOver);
+        if (checkDead and !isDead) wae.playSong(gameOver);
         isDead = checkDead;
 
         const body = snake.body.constSlice();
@@ -64,7 +66,7 @@ pub fn update() !void {
             try snake.body.append(Point.new(tail.x, tail.y));
             fruit.x = rnd(20);
             fruit.y = rnd(20);
-            music.playSong(getFruit);
+            wae.playSong(getFruit);
             // w4.tone(0 | (1000 << 16), 0 | (15 << 8), 100, w4.TONE_TRIANGLE);
         }
     }

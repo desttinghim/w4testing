@@ -1,72 +1,166 @@
 const std = @import("std");
 const music = @import("music.zig");
+const BoundedArray = std.BoundedArray;
 const Event = music.Event;
 const Flag = music.Flag;
+const Song = music.Song;
+const CursorChannel = music.CursorChannel;
 
 // utility functions
 const isDigit = std.ascii.isDigit;
 const toLower = std.ascii.toLower;
 
 /// Read locations
-const ReadTo = enum { time, tempo, instrument };
+const ReadTo = enum { bar, time, tempo, channel, mode };
 
 const Dynamic = enum(u8) { pp = 1, p = 3, mp = 6, mf = 12, f = 25, ff = 50, fff = 100 };
 
-const TimeSignature = struct {
-    tempo: u8,
-    upper: u8,
-    lower: u8,
+/// Notes in music are based on fractions of a bar
+const Duration = enum(u8) {
+    whole = 1,
+    half = 2,
+    quarter = 4,
+    quarter_triplet = 6,
+    eighth = 8,
+    sixteenth = 16,
+    thirtysecond = 32,
+    sixtyfourth = 64,
+};
+const Time = struct {
+    /// Length of bar in ticks
+    bar: u32 = 0,
+    tempo: u32,
+    /// Beats in a bar
+    beats: u32,
+    /// Value of a beat
+    beatValue: u32,
 
-    pub fn setSig(this: *@This(), upper: u8, lower: u8) void {
-        this.upper = upper;
-        this.lower = lower;
+    currentTick: u32 = 0,
+    tripletTicks: [3]u32 = .{ 0, 0, 0 },
+
+    /// Tempo
+    pub fn init() @This() {
+        var self = @This(){
+            .tempo = 112,
+            .beats = 4,
+            .beatValue = 4,
+        };
+        self.updateBar();
+        return self;
+    }
+
+    /// Appease the timing god by calling this with the proper duration
+    pub fn tick(this: *@This(), duration: u32) u32 {
+        var ret: u32 = 0;
+        if (duration % 3 == 0) {
+            // Triplet trouble
+            if (this.tripletTicks[2] == 0) this.tripletTicks = this.triplets(duration);
+            for (this.tripletTicks) |*tt| {
+                if (tt.* == 0) continue;
+                ret = tt.*;
+                tt.* = 0;
+                break;
+            }
+        } else {
+            ret = this.getTicks(duration);
+        }
+        this.currentTick += ret;
+        return ret;
+    }
+
+    pub fn barCheck(this: *@This()) bool {
+        return this.currentTick % this.bar == 0;
+    }
+
+    pub fn setBar(this: *@This(), ticks: u8) void {
+        this.bar = ticks;
+        this.setSig(4, 4);
+    }
+
+    fn updateBar(this: *@This()) void {
+        this.bar = tempo2bar(this.tempo, this.beats);
     }
 
     pub fn setTempo(this: *@This(), tempo: u8) void {
-        this.tempo = tempo;
+        this.bar = (tempo * this.bar) / (this.beats * 60 * 60);
     }
 
-    /// Returns the length of a bar in ticks
-    pub fn bar(this: @This()) u32 {
-        return note2ticks(this.tempo, this.upper, 1);
+    // TODO: Find out if this only makes sense when using tempo
+    pub fn setSig(this: *@This(), beats: u8, beatValue: u8) void {
+        const tempo = this.tempo;
+        this.beats = beats;
+        this.beatValue = beatValue;
+        this.bar = @intCast(u8, tempo2bar(tempo, beats));
     }
 
-    pub fn ticks(this: @This(), duration: u32) u8 {
-        return @intCast(u8, note2ticks(this.tempo, this.lower, duration));
+    pub fn getTicks(this: @This(), duration: u32) u32 {
+        return (this.bar * this.beatValue) / (this.beats * duration);
     }
 
-    pub fn ticksErr(this: @This(), duration: u32) [2]u8 {
-        var res = note2ticksErr(this.tempo, this.lower, duration);
-        return .{ @intCast(u8, res[0]), @intCast(u8, res[1]) };
+    /// Triplets don't divide evenly, so everything sucks
+    pub fn triplets(this: @This(), duration: u32) [3]u32 {
+        // Rounds the number down
+        const ticks = this.getTicks(duration);
+        var ret = [_]u32{ ticks, ticks, ticks };
+        // Get remainder
+        const rem = ticks % duration;
+        var correction = rem / (duration / 3);
+        // Make a couple of the triplets longer to compensate for lack of
+        // decimals
+        var i: u8 = 0;
+        while (correction > 0) : (i += 1) {
+            ret[i] += 1;
+            correction -= 1;
+        }
+        return ret;
     }
 };
 
-const Instrument = enum { pulse12, pulse25, pulse50, pulse75, triangle, noise };
+test "time keeping" {
+    var time = Time.init();
+    var tick: u32 = 0;
 
-/// Supports the following:
-/// duration = [1 to 64][.]
-/// {a-g}[+ or -][duration]
-/// r[duration]
-/// o[0-9]
-/// <
-/// >
-/// (note)~(note)
-/// ![keyword] value
-/// :[instrument]
-pub fn parseAlda(comptime size: comptime_int, buf: []const u8) !std.BoundedArray(Event, size) {
-    @setEvalBranchQuota(4000);
-    var eventlist = try std.BoundedArray(Event, size).init(0);
-    // registers
+    // Testing triplets
+    tick = time.tick(6);
+    tick = time.tick(6);
+    tick = time.tick(6);
+    tick = time.tick(6);
+    tick = time.tick(6);
+    tick = time.tick(6);
+
+    try std.testing.expectEqual(true, time.barCheck());
+
+    time = Time.init();
+    time.setTempo(112);
+    try std.testing.expectEqual(@as(u32, 112), time.tempo);
+
+    time = Time.init();
+    time.setTempo(112);
+    time.setSig(2, 4);
+    try std.testing.expectEqual(@as(u32, 112), time.tempo);
+}
+
+/// Parses a WAEL string into the song struct required by the WAE runner. Can be
+/// run at comptime.
+/// WAEL is specifically aimed at making music using the WAE runner working in a
+/// WASM4 environment. No attempt has been made to generalize it, but feel free
+/// to make variations that work in different environments.
+/// TODO: Make it work at runtime
+pub fn parse(buf: []const u8) !Song {
+    @setEvalBranchQuota(10000);
+    var song = try Song.init();
+    // Points to the end of sections where gotos are not complete. Once a
+    // channel is referenced again, it will be completed
+    var sectionGotos: [4]u16 = .{ 0, 0, 0, 0 };
     var currentOctave: u8 = 3;
     var currentDuration: u8 = 4;
     var currentDynamic: Dynamic = .mp;
-    var currentInstrument: Instrument = .pulse12;
+    var currentChannel: ?CursorChannel = null;
+
     var readToOpt: ?ReadTo = null;
 
-    // timing
-    var currentErr: u32 = 0;
-    var currentTick: u32 = 0;
-    var time: TimeSignature = .{ .tempo = 112, .upper = 4, .lower = 4 };
+    var time = Time.init();
+    var lastTick: u32 = 0;
 
     var lineIter = std.mem.split(u8, buf, "\n");
     lineparse: while (lineIter.next()) |line| {
@@ -75,23 +169,33 @@ pub fn parseAlda(comptime size: comptime_int, buf: []const u8) !std.BoundedArray
             if (readToOpt) |readTo| {
                 // TODO: Implement setting variables
                 switch (readTo) {
+                    .bar => {
+                        time.setBar(try std.fmt.parseInt(u8, tok, 10));
+                    },
                     .time => {
                         time.setSig(tok[0] - '0', tok[2] - '0');
                     },
                     .tempo => {
                         time.setTempo(try std.fmt.parseInt(u8, tok, 10));
                     },
-                    .instrument => {
-                        currentInstrument = std.meta.stringToEnum(Instrument, tok) orelse return error.UnknownInstrument;
-                        var flag = switch (currentInstrument) {
-                            .pulse12 => Flag.Pulse1 | Flag.Mode1,
-                            .pulse25 => Flag.Pulse1 | Flag.Mode2,
-                            .pulse50 => Flag.Pulse1 | Flag.Mode3,
-                            .pulse75 => Flag.Pulse1 | Flag.Mode4,
-                            .triangle => Flag.Triangle,
-                            .noise => Flag.Noise,
-                        };
-                        try eventlist.append(Event{ .flag = flag });
+                    .channel => {
+                        // TODO: stop current section and begin another
+                        if (currentChannel) |channel| {
+                            // Place goto command in event list w/ temporary value
+                            try song.events.append(Event{ .goto = 0 });
+                            // Store goto details for future reference
+                            const i = @enumToInt(channel);
+                            sectionGotos[i] = @intCast(u16, song.events.len - 1);
+                        }
+                        currentChannel = std.meta.stringToEnum(CursorChannel, tok) orelse return error.UknownChannel;
+                        // TODO: change beginning or section
+                    },
+                    .mode => {
+                        if (currentChannel) |channel| {
+                            if (channel == .p1 or channel == .p2) {
+                                try song.events.append(Event{ .param = try std.fmt.parseInt(u8, tok, 10) });
+                            }
+                        } else return error.InvalidMode;
                     },
                 }
                 readToOpt = null;
@@ -101,21 +205,13 @@ pub fn parseAlda(comptime size: comptime_int, buf: []const u8) !std.BoundedArray
                 '#' => continue :lineparse,
                 '!' => readToOpt = std.meta.stringToEnum(ReadTo, tok[1..tok.len]),
                 '|' => {
-                    if (currentTick % time.bar() != 0) {
-                        if (currentErr > 0) {
-                            var diff = time.bar() - (currentTick % time.bar());
-                            currentTick += diff;
-                            std.log.warn("error in bar quantization differs by {} from {}", .{ diff, time.bar() });
-                            continue;
-                        }
-                        return error.BarCheckFailed;
-                    } else continue;
+                    if (!time.barCheck()) return error.BarCheckFailed else continue;
                 },
                 '<' => currentOctave = std.math.sub(u8, currentOctave, 1) catch return error.OctaveTooLow,
                 '>' => currentOctave = std.math.add(u8, currentOctave, 1) catch return error.OctaveTooHigh,
                 '(' => {
                     currentDynamic = std.meta.stringToEnum(Dynamic, tok[1 .. tok.len - 1]) orelse return error.InvalidDynamic;
-                    try eventlist.append(Event{ .vol = @enumToInt(currentDynamic) });
+                    try song.events.append(Event{ .vol = @enumToInt(currentDynamic) });
                 },
                 'o' => if (tok.len > 1) {
                     currentOctave = (tok[1] - '0');
@@ -126,26 +222,24 @@ pub fn parseAlda(comptime size: comptime_int, buf: []const u8) !std.BoundedArray
                         var duration_res = try parseDuration(tok[note_res.end + 1 .. tok.len]);
                         if (duration_res.duration != 0 and duration_res.end > 0) {
                             currentDuration = duration_res.duration;
-                            var ticks = time.ticks(currentDuration);
-                            // TODO: change adsr based on instrument
-                            try eventlist.append(Event{ .sr = .{ .sustain = ticks, .release = 0 } });
                         }
                         // TODO: implement ties (~)
                     }
-                    var tickres = time.ticksErr(currentDuration);
-                    currentTick += tickres[0];
-                    currentErr += tickres[1];
+
+                    // Update time keeping
+                    var tick = time.tick(currentDuration);
+                    if (lastTick != tick) try song.events.append(Event.init_sr(tick, 0));
+
                     if (note_res.note) |note| {
-                        try eventlist.append(Event{ .note = ntof(octave(currentOctave) + note) });
+                        try song.events.append(Event{ .note = ntof(octave(currentOctave) + note) });
                     } else {
-                        try eventlist.append(Event.rest);
+                        try song.events.append(Event.rest);
                     }
                 },
             }
-            // std.log.warn("{s} {} {}/{}", .{ tok, currentTick, currentTick % time.bar(), time.bar() });
         }
     }
-    return eventlist;
+    return song;
 }
 
 const NoteRes = struct { note: ?u8, end: usize };
@@ -226,17 +320,20 @@ fn note2ticks(bpm: u32, beatValue: u32, duration: u32) u32 {
     return ticks;
 }
 
-fn note2ticksErr(bpm: u32, beatValue: u32, duration: u32) [2]u32 {
-    // whole = 240, half = 120, quarter = 60, etc.
-    const one = (beatValue * 60 * 60);
-    const two = bpm * duration;
-    const ticks = one / two;
-    const err = (@intToFloat(f32, one) / @intToFloat(f32, two)) - @intToFloat(f32, ticks);
-    return .{ ticks, @floatToInt(u32, err * 10) };
+fn tempo2beat(bpm: u32, beats: u32, beatValue: u32) u32 {
+    return (beatValue * 60 * 60) / (bpm * beats);
+}
+
+fn tempo2bar(bpm: u32, beats: u32) u32 {
+    // 60 * 60 == one minute in ticks
+    return ((60 * 60) / bpm) * beats;
 }
 
 test "note2ticks" {
     const expectEqual = std.testing.expectEqual;
+    try expectEqual(tempo2bar(112, 4), 128);
+    try expectEqual(tempo2bar(112, 2), 64);
+
     // 225bpm, 4/4 time
     try expectEqual(note2ticks(225, 4, 64), 1);
     try expectEqual(note2ticks(225, 4, 32), 2);
@@ -253,7 +350,6 @@ test "note2ticks" {
     try expectEqual(note2ticks(112, 4, 32), 4);
     try expectEqual(note2ticks(112, 4, 16), 8);
     try expectEqual(note2ticks(112, 4, 8), 16);
-    try expectEqual(note2ticksErr(112, 4, 6), .{ 21, 4 }); // triplet quarter note
     try expectEqual(note2ticks(112, 4, 4), 32);
     try expectEqual(note2ticks(112, 4, 2), 64);
     try expectEqual(note2ticks(112, 4, 1), 128);
