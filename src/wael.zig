@@ -268,14 +268,13 @@ fn parseNote(buf: []const u8) !NoteRes {
     };
 
     var end = if (buf.len > 1)
-        for (buf) |char, i|
+        for (buf[1..buf.len]) |char, i| {
             switch (char) {
                 '+' => note += 1,
                 '-' => note -= 1,
                 else => break i,
             }
-        else
-            buf.len
+        } else buf.len
     else
         buf.len;
     return NoteRes{ .note = note, .end = end };
