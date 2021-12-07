@@ -1,5 +1,6 @@
 const w4 = @import("wasm4.zig");
 const std = @import("std");
+const util = @import("util.zig");
 const BoundedArray = std.BoundedArray;
 
 pub const Flag = struct {
@@ -154,7 +155,7 @@ pub const WAE = struct {
             // Get current event
             var event = events[state.cursor.*];
             // Wait to play note until current note finishes
-            if (event == .stop or event == .note and this.counter < state.next.*) continue;
+            if (event == .stop or (event == .note and this.counter < state.next.*)) continue;
             while (state.next.* <= this.counter) {
                 event = events[state.cursor.*];
                 switch (event) {
@@ -186,12 +187,21 @@ pub const WAE = struct {
                         state.next.* = this.counter + state.duration.*;
                     },
                     .note => |note| {
-                        // w4.trace("note");
                         var freq = if (state.freq.*) |freq| freq | (note << 8) else note;
                         state.freq.* = null;
                         var flags = @intCast(u8, i) | state.param.*;
                         w4.tone(freq, state.duration.*, state.volume.*, flags);
                         state.next.* = this.counter + state.duration.*;
+
+                        // debug
+                        util.trace("c {} note {} {} {} {} {}", .{
+                            i,
+                            freq,
+                            state.duration.*,
+                            state.volume.*,
+                            flags,
+                            state.param.*,
+                        });
                     },
                 }
                 state.cursor.* = (state.cursor.* + 1);

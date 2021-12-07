@@ -1,3 +1,4 @@
+const std = @import("std");
 const wael = @import("wael.zig");
 
 comptime {
@@ -25,6 +26,16 @@ test "parse twinkle twinkle little star" {
 }
 
 test "parse sound effects" {
-    _ = try wael.parse(@embedFile("../assets/getFruit.txt"));
-    _ = try wael.parse(@embedFile("../assets/gameOver.txt"));
+    const s1 = try wael.parse(@embedFile("../assets/getFruit.txt"));
+    const s2 = try wael.parse(@embedFile("../assets/gameOver.txt"));
+
+    std.log.warn("{any}", .{s1.beginning});
+    for (s1.events.constSlice()) |e, i| {
+        std.log.warn("{}: {}", .{ i, e });
+    }
+
+    std.log.warn("{any}", .{s2.beginning});
+    for (s2.events.constSlice()) |e, i| {
+        std.log.warn("{}: {}", .{ i, e });
+    }
 }

@@ -11,4 +11,5 @@ a-4 f8 c | a-4 e- | g4 g12 a > d- | g2
 !channel tri
 
 o2 (mf)
-f8 f f f | > b b b b | e- e- e- e- | > e- e- e- e-
+f2 | > b | e- | > e-
+#f8 f f f | > b b b b | e- e- e- e- | > e- e- e- e-

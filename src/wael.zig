@@ -201,7 +201,15 @@ pub fn parse(buf: []const u8) !Song {
                     .mode => {
                         if (currentChannel) |channel| {
                             if (channel == .p1 or channel == .p2) {
-                                try song.events.append(Event{ .param = try std.fmt.parseInt(u8, tok, 10) });
+                                const modeint = try std.fmt.parseInt(u8, tok, 10);
+                                const mode = switch (modeint) {
+                                    1 => Flag.Mode1,
+                                    2 => Flag.Mode2,
+                                    3 => Flag.Mode3,
+                                    4 => Flag.Mode4,
+                                    else => return error.UnknownMode,
+                                };
+                                try song.events.append(Event{ .param = mode });
                             }
                         } else return error.InvalidMode;
                     },
@@ -248,7 +256,12 @@ pub fn parse(buf: []const u8) !Song {
         }
     }
 
-    // if ()
+    for (sectionGotos) |b, i| {
+        if (b != 0 and song.events.get(i) == Event.goto) {
+            song.events.set(i, Event.stop);
+            sectionGotos[i] = 0;
+        }
+    }
 
     return song;
 }
