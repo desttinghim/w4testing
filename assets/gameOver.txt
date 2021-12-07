@@ -1,7 +1,15 @@
 !tempo 112
 !time 2/4
+
+
 !channel p1
 !mode 2
 
-o4 (mp)
+o3 (mf)
 a4 f8 c | a4 e | g4 g12 a > d | g2
+
+!channel p2
+!mode 4
+
+o2 (mf)
+g2 | > b | f | f

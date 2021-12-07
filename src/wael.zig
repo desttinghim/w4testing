@@ -167,7 +167,6 @@ pub fn parse(buf: []const u8) !Song {
         var tokIter = std.mem.tokenize(u8, line, " \n\t");
         while (tokIter.next()) |tok| {
             if (readToOpt) |readTo| {
-                // TODO: Implement setting variables
                 switch (readTo) {
                     .bar => {
                         time.setBar(try std.fmt.parseInt(u8, tok, 10));
@@ -179,18 +178,24 @@ pub fn parse(buf: []const u8) !Song {
                         time.setTempo(try std.fmt.parseInt(u8, tok, 10));
                     },
                     .channel => {
-                        // TODO: stop current section and begin another
                         if (currentChannel) |channel| {
                             // Place goto command in event list w/ temporary value
                             try song.events.append(Event{ .goto = 0 });
                             // Store goto details for future reference
                             const i = @enumToInt(channel);
                             sectionGotos[i] = @intCast(u16, song.events.len - 1);
-                        } else {
-                            const channel = std.meta.stringToEnum(CursorChannel, tok) orelse return error.UknownChannel;
-                            currentChannel = channel;
-                            var i = @enumToInt(channel);
+                        }
+                        const channel = std.meta.stringToEnum(CursorChannel, tok) orelse return error.UknownChannel;
+                        currentChannel = channel;
+                        var i = @enumToInt(channel);
+                        if (song.beginning[i] >= song.events.len) {
                             song.beginning[i] = @intCast(u16, song.events.len);
+                        } else if (sectionGotos[i] != 0) {
+                            var a = sectionGotos[i];
+                            if (song.events.get(a) == Event.goto) {
+                                song.events.set(a, Event{ .goto = sectionGotos[i] });
+                                sectionGotos[i] = 0;
+                            }
                         }
                     },
                     .mode => {
@@ -242,6 +247,9 @@ pub fn parse(buf: []const u8) !Song {
             }
         }
     }
+
+    // if ()
+
     return song;
 }
 
