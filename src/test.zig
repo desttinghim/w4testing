@@ -8,15 +8,9 @@ comptime {
 pub const song =
     \\ # Tempo can be set by ticks
     \\ !spd 2
-    \\ # ...or in beats per minute. However, the BPM value is an approximation
-    \\ # and the function is provided purely for the convenience of the author.
-    \\ # Only certain values are supported.
-    \\ #!tempo 112
-    \\ #!time 4/4
-    \\ !channel p1
-    \\ !mode 2
-    \\ o3
-    \\ (mp) c4 c g g | a a g2 | f4 f e e | d d c2
+    \\ :a p1 !mode 2
+    \\ o3 (mp)
+    \\ c4 c g g | a a g2 | f4 f e e | d d c2
     \\ g4 g f f | e e d2 | g4 g f f | e e d2
     \\ c4 c g g | a a g2 | f4 f e e | d d c2
 ;

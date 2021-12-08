@@ -11,7 +11,7 @@ const isDigit = std.ascii.isDigit;
 const toLower = std.ascii.toLower;
 
 /// Read locations
-const ReadTo = enum { adsr, spd, time, tempo, channel, mode, goto };
+const ReadTo = enum { adsr, spd, time, tempo, mode, goto };
 
 const Dynamic = enum(u8) { pp = 1, p = 3, mp = 6, mf = 12, f = 25, ff = 50, fff = 100 };
 
@@ -150,7 +150,7 @@ test "time keeping" {
 /// to make variations that work in different environments.
 /// TODO: Make it work at runtime
 pub fn parse(buf: []const u8) !Song {
-    @setEvalBranchQuota(10000);
+    @setEvalBranchQuota(20000);
     var song = try Song.init();
     // Points to the end of sections where gotos are not complete. Once a
     // channel is referenced again, it will be completed
@@ -163,6 +163,7 @@ pub fn parse(buf: []const u8) !Song {
     var sectionName: []const u8 = "";
 
     var readToOpt: ?ReadTo = null;
+    var readMode = false;
 
     var time = Time.init();
 
@@ -170,6 +171,23 @@ pub fn parse(buf: []const u8) !Song {
     lineparse: while (lineIter.next()) |line| {
         var tokIter = std.mem.tokenize(u8, line, " \n\t");
         while (tokIter.next()) |tok| {
+            if (readMode) {
+                // set the channel
+                if (currentChannel) |_| {
+                    // Place goto command in event list w/ temporary value
+                    var position = @intCast(u16, song.events.len);
+                    try song.events.append(Event{ .goto = position });
+                }
+                // std.log.warn("{} {} {s}", .{ readMode, currentChannel, tok });
+                const channel = std.meta.stringToEnum(CursorChannel, tok) orelse return error.UnknownChannel;
+                currentChannel = channel;
+
+                try addSection(&sections, &song, channel, sectionName);
+                sectionName = "";
+
+                readMode = false;
+                continue;
+            }
             if (readToOpt) |readTo| {
                 switch (readTo) {
                     .spd => {
@@ -180,17 +198,6 @@ pub fn parse(buf: []const u8) !Song {
                     },
                     .tempo => {
                         time.setTempo(try std.fmt.parseInt(u8, tok, 10));
-                    },
-                    .channel => {
-                        if (currentChannel) |_| {
-                            // Place goto command in event list w/ temporary value
-                            var position = @intCast(u16, song.events.len);
-                            try song.events.append(Event{ .goto = position });
-                        }
-                        const channel = std.meta.stringToEnum(CursorChannel, tok) orelse return error.UknownChannel;
-                        currentChannel = channel;
-                        try addSection(&sections, &song, channel, sectionName);
-                        sectionName = tok;
                     },
                     .mode => {
                         if (currentChannel) |channel| {
@@ -210,10 +217,13 @@ pub fn parse(buf: []const u8) !Song {
                     .adsr => try song.events.append(Event{ .adsr = try std.fmt.parseInt(u8, tok, 16) }),
                     .goto => {
                         for (sections.constSlice()) |section| {
+                            var channel = currentChannel orelse .any;
+                            if (section.channel != channel) continue;
                             if (std.mem.eql(u8, section.name, tok)) {
                                 try song.events.append(Event{ .goto = section.address });
+                                break;
                             }
-                        }
+                        } else return error.UnknownLabel;
                     },
                 }
                 readToOpt = null;
@@ -221,8 +231,13 @@ pub fn parse(buf: []const u8) !Song {
             }
             switch (toLower(tok[0])) {
                 '#' => continue :lineparse,
-                ':' => sectionName = tok[1..tok.len],
-                '!' => readToOpt = std.meta.stringToEnum(ReadTo, tok[1..tok.len]),
+                ':' => {
+                    sectionName = tok[1..tok.len];
+                    readMode = true;
+                },
+                '!' => {
+                    readToOpt = std.meta.stringToEnum(ReadTo, tok[1..tok.len]);
+                },
                 '|' => {
                     if (!time.barCheck()) return error.BarCheckFailed else continue;
                 },
@@ -238,6 +253,7 @@ pub fn parse(buf: []const u8) !Song {
                     currentOctave = (tok[1] - '0');
                 } else return error.MissingOctaveNumber,
                 else => {
+                    // std.log.warn("{s}", .{tok});
                     var note_res = try parseNote(tok);
                     if (tok.len > 1 and note_res.end != tok.len) {
                         var duration_res = try parseDuration(tok[note_res.end + 1 .. tok.len]);
@@ -265,18 +281,29 @@ pub fn parse(buf: []const u8) !Song {
     //     std.log.warn("{} {s}: {}", .{ i, name, sect.address });
     // }
 
-    for (song.events.slice()) |event, i| {
-        // Find first section for each channel
-        for (song.beginning) |begin, chani| {
-            const channel = @intToEnum(CursorChannel, chani);
-            if (begin >= song.events.len) {
-                for (sections.constSlice()) |sect| {
-                    if (sect.channel == channel) song.beginning[chani] = sect.address;
-                }
+    // Find first section for each channel
+    for (song.beginning) |begin, chani| {
+        const channel = @intToEnum(CursorChannel, chani);
+        if (begin >= song.events.len) {
+            for (sections.constSlice()) |sect| {
+                if (sect.channel != channel) continue;
+                song.beginning[chani] = sect.address;
+                break;
             }
         }
+    }
+    for (song.events.slice()) |event, i| {
         if (event == Event.goto and event.goto == i) {
-            song.events.set(i, Event.stop);
+            var channel = CursorChannel.none;
+            for (sections.constSlice()) |sect| {
+                if (sect.address < i) {
+                    channel = sect.channel;
+                    continue;
+                }
+                if (sect.channel != channel) continue;
+                song.events.set(i, Event{ .goto = sect.address });
+                break;
+            } else song.events.set(i, Event.stop);
         }
     }
 

@@ -70,6 +70,8 @@ pub const CursorChannel = enum(u8) {
     p2 = w4.TONE_PULSE2,
     tri = w4.TONE_TRIANGLE,
     noise = w4.TONE_NOISE,
+    any,
+    none,
 };
 
 pub const WAE = struct {

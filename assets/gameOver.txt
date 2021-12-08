@@ -1,17 +1,21 @@
 !tempo 112
 !time 4/4
 
-!channel p1
-!mode 3
-!adsr 00000004
-(mf)
-o4  c8 d g  c d g  c d  | > a b < d  > a b < d  > a b |
+:a p1 !mode 3 !adsr 00000002
+(mf) o4  c8 d g  c d g  c d  | > a b < d  > a b < d  > a b |
+         c8 d g  c d g  c d  | > a b < d  > a b < d  > a b |
 
-:drumloop
-!channel noise
-!adsr 00000004
-(mf)
-o4 a16 r r a r a r r a r r r r a r r |
+:a p2 !mode 1 !adsr 0000000F
+(mf) o3  c2 g | > a < d |
+        c2 g | > a < d |
+!goto a
+
+:b p1 !mode 2 !adsr 00000004
+(mf) o4  c8 d g  c d g  c d  | > a b < d  > a b < d  > a b |
+!goto a
+
+:drumloop noise !adsr 00000004
+(p) o4 a16 r r a r a r r a r r r r a r r |
 !goto drumloop
 
 #!channel tri
