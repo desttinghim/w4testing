@@ -223,8 +223,10 @@ pub fn parse(buf: []const u8) !Song {
                 '|' => {
                     if (!time.barCheck()) return error.BarCheckFailed else continue;
                 },
-                '<' => currentOctave = std.math.sub(u8, currentOctave, 1) catch return error.OctaveTooLow,
-                '>' => currentOctave = std.math.add(u8, currentOctave, 1) catch return error.OctaveTooHigh,
+                // octave up
+                '>' => currentOctave = std.math.sub(u8, currentOctave, 1) catch return error.OctaveTooLow,
+                // octave down
+                '<' => currentOctave = std.math.add(u8, currentOctave, 1) catch return error.OctaveTooHigh,
                 '(' => {
                     currentDynamic = std.meta.stringToEnum(Dynamic, tok[1 .. tok.len - 1]) orelse return error.InvalidDynamic;
                     try song.events.append(Event{ .vol = @enumToInt(currentDynamic) });
@@ -311,15 +313,16 @@ fn parseDuration(buf: []const u8) !DurationRes {
 // octave
 fn octave(o: u8) u8 {
     return switch (o) {
-        0 => 24,
-        1 => 36,
-        2 => 48,
-        3 => 60,
-        4 => 72,
-        5 => 84,
-        6 => 96,
-        7 => 108,
-        8 => 120,
+        0 => 12,
+        1 => 24,
+        2 => 36,
+        3 => 48,
+        4 => 60,
+        5 => 72,
+        6 => 84,
+        7 => 96,
+        8 => 108,
+        9 => 120,
         else => unreachable,
     };
 }

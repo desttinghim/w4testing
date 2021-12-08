@@ -1,15 +1,13 @@
-!tempo 112
-!time 2/4
+!tempo 225
+!time 4/4
 
 
 !channel p1
 !mode 2
+(mf)
+o5 a4 c e- d | c o4 a8 r e-2 |
 
-o3 (mf)
-a-4 f8 c | a-4 e- | g4 g12 a > d- | g2
-
-!channel tri
-
-o2 (mf)
-f2 | > b | e- | > e-
-#f8 f f f | > b b b b | e- e- e- e- | > e- e- e- e-
+#!channel tri
+#o2 (p)
+#f2 | > b | e- | > e-
+#f8 g b < c | > > b- < c e > b- | < e- e- e- e- | > e- e- e- e-
