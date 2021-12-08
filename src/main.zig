@@ -1,6 +1,8 @@
 const w4 = @import("wasm4.zig");
 const game = @import("game.zig");
+const std = @import("std");
 
+var errBuf: [100:0]u8 = undefined;
 var errOpt: ?[]const u8 = null;
 
 // Interface
@@ -19,6 +21,8 @@ export fn update() void {
 
 fn err(e: anyerror) void {
     const name = @errorName(e);
-    errOpt = name;
-    w4.trace(name.ptr);
+    std.mem.copy(u8, &errBuf, name);
+    errBuf[name.len + 1] = 0;
+    errOpt = errBuf[0..name.len];
+    w4.trace(&errBuf);
 }

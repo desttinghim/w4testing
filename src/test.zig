@@ -6,8 +6,8 @@ comptime {
 }
 
 pub const song =
-    \\ # Tempo can be set by ticks per bar...
-    \\ !bar 128
+    \\ # Tempo can be set by ticks
+    \\ !spd 2
     \\ # ...or in beats per minute. However, the BPM value is an approximation
     \\ # and the function is provided purely for the convenience of the author.
     \\ # Only certain values are supported.

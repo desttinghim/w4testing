@@ -15,28 +15,32 @@ pub const Flag = struct {
 };
 pub const Event = union(enum) {
     /// Rests for the currently set duration
-    rest: void,
+    rest: struct { duration: u8 },
     /// Sets a parameter for the current cursor. Currently only used on the
     /// Pulse1 and Pulse2 channels to set the duty cycle
     param: u8,
     /// Sets attack and decay registers
-    ad: struct { attack: u8, decay: u8 },
-    /// Sets sustain and release registers
-    sr: struct { sustain: u8, release: u8 },
+    adsr: u32,
     /// Sets volume register
     vol: u8,
     /// Set start freq of slide
     slide: u16,
     /// Outputs note with freq and values in register
-    note: u16,
+    note: struct { freq: u16, duration: u8 },
     /// Jump to the specified section in the event list
     goto: u16,
     /// Stops current cursor
     stop: void,
 
     const Self = @This();
-    pub fn init_sr(s: u32, r: u32) Self {
-        return Self{ .sr = .{ .sustain = @intCast(u8, s), .release = @intCast(u8, r) } };
+    pub fn init_adsr(a: u32, d: u32, s: u32, r: u32) Self {
+        return Self{ .adsr = a << 24 | d << 16 | r << 8 | s };
+    }
+    pub fn init_note(f: u16, dur: u32) Self {
+        return Self{ .note = .{ .freq = f, .duration = @intCast(u8, dur) } };
+    }
+    pub fn init_rest(dur: u32) Self {
+        return Self{ .rest = .{ .duration = @intCast(u8, dur) } };
     }
 };
 
@@ -47,9 +51,6 @@ pub const Event = union(enum) {
 pub const Song = struct {
     /// Points to initial song sections
     beginning: [4]u16,
-    /// Points to the first instruction in a section, used by goto.
-    /// Maximum of 16 per song
-    section: BoundedArray(u16, 16),
     /// The event list, maximum size of 2048 events.
     events: BoundedArray(Event, listSize),
 
@@ -58,7 +59,6 @@ pub const Song = struct {
     pub fn init() !@This() {
         return @This(){
             .beginning = .{ listSize, listSize, listSize, listSize },
-            .section = try BoundedArray(u16, 16).init(0),
             .events = try BoundedArray(Event, listSize).init(0),
         };
     }
@@ -88,7 +88,7 @@ pub const WAE = struct {
     /// a = attack, d = decay, r = release, s = sustain
     /// aaaaaaaa dddddddd rrrrrrrr ssssssss
     /// The duration of the note is determined by summing each of the components.
-    duration: [4]u32 = .{ 0, 0, 0, 0 },
+    adsr: [4]u32 = .{ 0, 0, 0, 0 },
     /// Values can range from 0 to 100. Values outside that range are undefined
     /// behavior.
     volume: [4]u8 = .{ 0, 0, 0, 0 },
@@ -106,7 +106,7 @@ pub const WAE = struct {
         this.next = .{ 0, 0, 0, 0 };
         this.cursor = .{ 0, 0, 0, 0 };
         this.param = .{ 0, 0, 0, 0 };
-        this.duration = .{ 0, 0, 0, 0 };
+        this.adsr = .{ 0, 0, 0, 0 };
         this.volume = .{ 0, 0, 0, 0 };
         this.freq = .{ null, null, null, null };
     }
@@ -124,7 +124,7 @@ pub const WAE = struct {
         next: *u32,
         cursor: *u32,
         param: *u8,
-        duration: *u32,
+        adsr: *u32,
         volume: *u8,
         freq: *?u16,
     };
@@ -134,7 +134,7 @@ pub const WAE = struct {
             .next = &this.next[channel],
             .cursor = &this.cursor[channel],
             .param = &this.param[channel],
-            .duration = &this.duration[channel],
+            .adsr = &this.adsr[channel],
             .volume = &this.volume[channel],
             .freq = &this.freq[channel],
         };
@@ -146,7 +146,6 @@ pub const WAE = struct {
         defer this.counter += 1;
         // Only attempt to update if we have a song
         const song = this.song orelse return;
-        const section = song.section.constSlice();
         const events = song.events.constSlice();
         for (this.cursor) |_, i| {
             var state = this.getChannelState(i);
@@ -154,50 +153,44 @@ pub const WAE = struct {
             if (state.cursor.* >= song.events.len) continue;
             // Get current event
             var event = events[state.cursor.*];
+            if (event == .stop) continue;
             // Wait to play note until current note finishes
-            if (event == .stop or (event == .note and this.counter < state.next.*)) continue;
+            if (event == .note and this.counter < state.next.*) continue;
             while (state.next.* <= this.counter) {
                 event = events[state.cursor.*];
                 switch (event) {
                     .stop => continue,
                     .goto => |goto| {
-                        state.cursor.* = section[goto];
+                        state.cursor.* = goto;
                         continue; // Explicit continue here to skip counter increment
                     },
                     .param => |param| {
                         // w4.trace("param");
                         state.param.* = param;
                     },
-                    .ad => |ad| {
-                        // w4.trace("ad");
-                        state.duration.* &= 0x0000FFFF; // clear bits
-                        state.duration.* |= @intCast(u32, ad.attack) << 24;
-                        state.duration.* |= @intCast(u32, ad.decay) << 16;
-                    },
-                    .sr => |sr| {
-                        // w4.trace("sr");
-                        state.duration.* &= 0xFFFF0000; // clear bits
-                        state.duration.* |= @intCast(u32, sr.release) << 8;
-                        state.duration.* |= @intCast(u32, sr.sustain);
-                    },
+                    .adsr => |adsr| state.adsr.* = adsr,
                     .vol => |vol| state.volume.* = vol,
                     .slide => |freq| state.freq.* = freq,
-                    .rest => {
+                    .rest => |rest| {
                         // w4.trace("rest");
-                        state.next.* = this.counter + state.duration.*;
+                        state.next.* = this.counter + rest.duration;
                     },
                     .note => |note| {
-                        var freq = if (state.freq.*) |freq| freq | (note << 8) else note;
+                        var freq = if (state.freq.*) |freq| (freq |
+                            (@intCast(u32, note.freq) << 16)) else note.freq;
                         state.freq.* = null;
                         var flags = @intCast(u8, i) | state.param.*;
-                        w4.tone(freq, state.duration.*, state.volume.*, flags);
-                        state.next.* = this.counter + state.duration.*;
+
+                        w4.tone(freq, state.adsr.*, state.volume.*, flags);
+
+                        state.next.* = this.counter + note.duration;
 
                         // debug
-                        util.trace("c {} note {} {} {} {} {}", .{
+                        util.trace("c {} f {} l {} adsr {x} vol {} flg {}  p {}", .{
                             i,
                             freq,
-                            state.duration.*,
+                            note.duration,
+                            state.adsr.*,
                             state.volume.*,
                             flags,
                             state.param.*,
@@ -205,6 +198,7 @@ pub const WAE = struct {
                     },
                 }
                 state.cursor.* = (state.cursor.* + 1);
+                if (state.cursor.* >= song.events.len) break;
             }
         }
     }

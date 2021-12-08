@@ -1,6 +1,9 @@
 !tempo 112
 !time 4/4
+
 !channel p1
 !mode 2
+!adsr 0000000A
 
-o3 (mp) c16 d e f g
+(mp) o3
+c16 d e f g

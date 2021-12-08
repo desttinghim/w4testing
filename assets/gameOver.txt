@@ -1,11 +1,18 @@
-!tempo 225
+!tempo 112
 !time 4/4
 
-
 !channel p1
-!mode 2
+!mode 3
+!adsr 00000004
 (mf)
-o5 a4 c e- d | c o4 a8 r e-2 |
+o4  c8 d g  c d g  c d  | > a b < d  > a b < d  > a b |
+
+:drumloop
+!channel noise
+!adsr 00000004
+(mf)
+o4 a16 r r a r a r r a r r r r a r r |
+!goto drumloop
 
 #!channel tri
 #o2 (p)
