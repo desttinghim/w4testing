@@ -145,6 +145,16 @@ test "time keeping" {
 
 const ReadMode = union(enum) { Define: []const u8, Set: ReadTo, Top };
 
+const Instrument = struct { adsr: u32 };
+const InstrumentList = BoundedArray(Instrument, 64);
+
+const Section = struct { channel: CursorChannel, address: u16 };
+const SectionList = BoundedArray(Section, 64);
+
+const SymbolType = enum { Section, Instrument };
+const Symbol = struct { name: []const u8, sym: SymbolType, index: u32 };
+const SymbolList = BoundedArray(Symbol, 64);
+
 /// Parses a WAEL string into the song struct required by the WAE runner. Can be
 /// run at comptime.
 /// WAEL is specifically aimed at making music using the WAE runner working in a
@@ -154,14 +164,15 @@ const ReadMode = union(enum) { Define: []const u8, Set: ReadTo, Top };
 pub fn parse(buf: []const u8) !Song {
     @setEvalBranchQuota(20000);
     var song = try Song.init();
-    // Points to the end of sections where gotos are not complete. Once a
-    // channel is referenced again, it will be completed
-    // var sectionGotos: [4]u16 = .{ 0, 0, 0, 0 };
-    var sections = try SectionList.init(0);
+
     var currentOctave: u8 = 3;
     var currentDuration: u8 = 4;
     var currentDynamic: Dynamic = .mp;
     var currentChannel: ?CursorChannel = null;
+
+    var sections = try SectionList.init(0);
+    var instruments = try InstrumentList.init(0);
+    var symbols = try SymbolList.init(0);
 
     var readMode: ReadMode = .Top;
 
@@ -172,20 +183,32 @@ pub fn parse(buf: []const u8) !Song {
         var tokIter = std.mem.tokenize(u8, line, " \n\t");
         while (tokIter.next()) |tok| switch (readMode) {
             .Define => |name| {
-                // set the channel
-                if (currentChannel) |_| {
-                    // Place goto command in event list w/ temporary value
-                    var position = @intCast(u16, song.events.len);
-                    try song.events.append(Event{ .goto = position });
+                switch (name[0]) {
+                    '@' => {
+                        // Begin a section
+                        // set the channel
+                        if (currentChannel) |_| {
+                            // Place goto command in event list w/ temporary value
+                            var position = @intCast(u16, song.events.len);
+                            try song.events.append(Event{ .goto = position });
+                        }
+                        // std.log.warn("{} {} {s}", .{ readMode, currentChannel, tok });
+                        const channel = std.meta.stringToEnum(CursorChannel, tok) orelse return error.UnknownChannel;
+                        currentChannel = channel;
+
+                        var position = @intCast(u16, song.events.len);
+                        var section: Section = .{ .channel = channel, .address = position };
+                        try sections.append(section);
+                        try symbols.append(Symbol{ .name = name, .index = sections.len - 1, .sym = .Section });
+                    },
+                    '%' => {
+                        // define an instrument
+                        try instruments.append(Instrument{ .adsr = try std.fmt.parseInt(u8, tok, 16) });
+                        try symbols.append(Symbol{ .name = name, .index = instruments.len - 1, .sym = .Instrument });
+                    },
+                    else => return error.InvalidSymbol,
                 }
-                // std.log.warn("{} {} {s}", .{ readMode, currentChannel, tok });
-                const channel = std.meta.stringToEnum(CursorChannel, tok) orelse return error.UnknownChannel;
-                currentChannel = channel;
-
-                try addSection(&sections, &song, channel, name);
-
                 readMode = .Top;
-                continue;
             },
             .Set => |readTo| {
                 switch (readTo) {
@@ -215,10 +238,11 @@ pub fn parse(buf: []const u8) !Song {
                     },
                     .adsr => try song.events.append(Event{ .adsr = try std.fmt.parseInt(u8, tok, 16) }),
                     .goto => {
-                        for (sections.constSlice()) |section| {
+                        for (symbols.constSlice()) |symbol| {
+                            var section = sections.get(symbol.index);
                             var channel = currentChannel orelse .any;
                             if (section.channel != channel) continue;
-                            if (std.mem.eql(u8, section.name, tok)) {
+                            if (std.mem.eql(u8, symbol.name, tok)) {
                                 try song.events.append(Event{ .goto = section.address });
                                 break;
                             }
@@ -351,15 +375,6 @@ fn parseDuration(buf: []const u8) !DurationRes {
         }
     } else buf.len;
     return DurationRes{ .duration = val, .end = end };
-}
-
-const Section = struct { channel: CursorChannel, name: []const u8, address: u16 };
-const SectionList = BoundedArray(Section, 16);
-/// This function is called whenever a section end is detected, basically
-/// whenever a goto or channel occurs
-fn addSection(sections: *SectionList, song: *Song, channel: CursorChannel, name: []const u8) !void {
-    var position = @intCast(u16, song.events.len);
-    try sections.append(Section{ .channel = channel, .name = name, .address = position });
 }
 
 // octave
