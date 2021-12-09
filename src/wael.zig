@@ -143,6 +143,8 @@ test "time keeping" {
     try std.testing.expectEqual(@as(u32, 112), time.tempo);
 }
 
+const ReadMode = union(enum) { Define: []const u8, Set: ReadTo, Top };
+
 /// Parses a WAEL string into the song struct required by the WAE runner. Can be
 /// run at comptime.
 /// WAEL is specifically aimed at making music using the WAE runner working in a
@@ -160,18 +162,16 @@ pub fn parse(buf: []const u8) !Song {
     var currentDuration: u8 = 4;
     var currentDynamic: Dynamic = .mp;
     var currentChannel: ?CursorChannel = null;
-    var sectionName: []const u8 = "";
 
-    var readToOpt: ?ReadTo = null;
-    var readMode = false;
+    var readMode: ReadMode = .Top;
 
     var time = Time.init();
 
     var lineIter = std.mem.split(u8, buf, "\n");
     lineparse: while (lineIter.next()) |line| {
         var tokIter = std.mem.tokenize(u8, line, " \n\t");
-        while (tokIter.next()) |tok| {
-            if (readMode) {
+        while (tokIter.next()) |tok| switch (readMode) {
+            .Define => |name| {
                 // set the channel
                 if (currentChannel) |_| {
                     // Place goto command in event list w/ temporary value
@@ -182,13 +182,12 @@ pub fn parse(buf: []const u8) !Song {
                 const channel = std.meta.stringToEnum(CursorChannel, tok) orelse return error.UnknownChannel;
                 currentChannel = channel;
 
-                try addSection(&sections, &song, channel, sectionName);
-                sectionName = "";
+                try addSection(&sections, &song, channel, name);
 
-                readMode = false;
+                readMode = .Top;
                 continue;
-            }
-            if (readToOpt) |readTo| {
+            },
+            .Set => |readTo| {
                 switch (readTo) {
                     .spd => {
                         time.setSpeed(try std.fmt.parseInt(u8, tok, 10));
@@ -226,54 +225,54 @@ pub fn parse(buf: []const u8) !Song {
                         } else return error.UnknownLabel;
                     },
                 }
-                readToOpt = null;
-                continue;
-            }
-            switch (toLower(tok[0])) {
-                '#' => continue :lineparse,
-                ':' => {
-                    sectionName = tok[1..tok.len];
-                    readMode = true;
-                },
-                '!' => {
-                    readToOpt = std.meta.stringToEnum(ReadTo, tok[1..tok.len]);
-                },
-                '|' => {
-                    if (!time.barCheck()) return error.BarCheckFailed else continue;
-                },
-                // octave up
-                '>' => currentOctave = std.math.sub(u8, currentOctave, 1) catch return error.OctaveTooLow,
-                // octave down
-                '<' => currentOctave = std.math.add(u8, currentOctave, 1) catch return error.OctaveTooHigh,
-                '(' => {
-                    currentDynamic = std.meta.stringToEnum(Dynamic, tok[1 .. tok.len - 1]) orelse return error.InvalidDynamic;
-                    try song.events.append(Event{ .vol = @enumToInt(currentDynamic) });
-                },
-                'o' => if (tok.len > 1) {
-                    currentOctave = (tok[1] - '0');
-                } else return error.MissingOctaveNumber,
-                else => {
-                    // std.log.warn("{s}", .{tok});
-                    var note_res = try parseNote(tok);
-                    if (tok.len > 1 and note_res.end != tok.len) {
-                        var duration_res = try parseDuration(tok[note_res.end + 1 .. tok.len]);
-                        if (duration_res.duration != 0 and duration_res.end > 0) {
-                            currentDuration = duration_res.duration;
+                readMode = .Top;
+            },
+            .Top => {
+                switch (toLower(tok[0])) {
+                    '#' => continue :lineparse,
+                    ':' => {
+                        readMode = .{ .Define = tok[1..tok.len] };
+                    },
+                    '!' => {
+                        readMode = .{ .Set = std.meta.stringToEnum(ReadTo, tok[1..tok.len]) orelse return error.UnknownGlobal };
+                    },
+                    '|' => {
+                        if (!time.barCheck()) return error.BarCheckFailed else continue;
+                    },
+                    // octave up
+                    '>' => currentOctave = std.math.sub(u8, currentOctave, 1) catch return error.OctaveTooLow,
+                    // octave down
+                    '<' => currentOctave = std.math.add(u8, currentOctave, 1) catch return error.OctaveTooHigh,
+                    '(' => {
+                        currentDynamic = std.meta.stringToEnum(Dynamic, tok[1 .. tok.len - 1]) orelse return error.InvalidDynamic;
+                        try song.events.append(Event{ .vol = @enumToInt(currentDynamic) });
+                    },
+                    'o' => if (tok.len > 1) {
+                        currentOctave = (tok[1] - '0');
+                    } else return error.MissingOctaveNumber,
+                    else => {
+                        // std.log.warn("{s}", .{tok});
+                        var note_res = try parseNote(tok);
+                        if (tok.len > 1 and note_res.end != tok.len) {
+                            var duration_res = try parseDuration(tok[note_res.end + 1 .. tok.len]);
+                            if (duration_res.duration != 0 and duration_res.end > 0) {
+                                currentDuration = duration_res.duration;
+                            }
+                            // TODO: implement ties (~)
                         }
-                        // TODO: implement ties (~)
-                    }
 
-                    // Update time keeping
-                    var tick = time.tick(currentDuration);
+                        // Update time keeping
+                        var tick = time.tick(currentDuration);
 
-                    if (note_res.note) |note| {
-                        try song.events.append(Event.init_note(ntof(octave(currentOctave) + note), tick));
-                    } else {
-                        try song.events.append(Event.init_rest(tick));
-                    }
-                },
-            }
-        }
+                        if (note_res.note) |note| {
+                            try song.events.append(Event.init_note(ntof(octave(currentOctave) + note), tick));
+                        } else {
+                            try song.events.append(Event.init_rest(tick));
+                        }
+                    },
+                }
+            },
+        };
     }
 
     // for (sections.constSlice()) |sect, i| {

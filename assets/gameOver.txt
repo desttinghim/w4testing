@@ -1,48 +1,24 @@
 !tempo 112
 !time 4/4
 
-# Forth like, should spaces be necessary?
-: pluck     !chan p1    !adsr 00000002  !mode 3 ;
-: pluck2    !chan p1    !adsr 00000004  !mode 3 ;
-# You can define a specific pitches for instruments
-: kick  !chan noise !adsr 00000002  !freq 440   !swp 1;
-: snare !chan noise !adsr 00000002
+:a p1 !mode 3 !adsr 00000002
+(mf) o4  c8 d g  c d g  c d  | > a b < d  > a b < d  > a b |
+         c8 d g  c d g  c d  | > a b < d  > a b < d  > a b |
 
-: bow   !chan p2    !mode 1 !adsr 000000F ;
+:a p2 !mode 1 !adsr 0000000F
+(mf) o3  c2 g | > a < d |
+        c2 g | > a < d |
+!goto a
 
-# TODO: add commands for changing note parsing modes. The current method
-# just inserts notes with duration. This may be powerful enough though
+:b p1 !mode 2 !adsr 00000004
+(mf) o4  c8 d g  c d g  c d  | > a b < d  > a b < d  > a b |
+!goto a
 
-# : begins the definition of a variable
-# { } tells wael to layer the sections
-# [ ] tells wael this is a section
-: partA { [
-%pluck (mf) o4
-       c8 d g  c d g  c d  | > a b < d  > a b < d  > a b |
-       c8 d g  c d g  c d  | > a b < d  > a b < d  > a b |
-] [
-%bow   (mf) o3
-       c2 g | > a < d |
-       c2 g | > a < d |
-] } ; # end defining variable
+:drumloop noise !adsr 00000004
+(p) o4 a16 r r a r a r r a r r r r a r r |
+!goto drumloop
 
-# {} isn't necessary if you aren't playing back another part at the same time
-: partB [
-%pluck (mf) o4
-       c8 d g  c d g  c d  | > a b < d  > a b < d  > a b |
-] ;
-
-: drumloop
-{   # tells wael to layer these instruments together into one section
-    # r and _ are interchangeable
-    # x indicates a note for an instrument with a preset pitch
-    # d sets the duration without inserting a note
-    # v sets volume (0-100)
-[   %kick   v020 d16 x _ _ x _ x _ _ x _ _ _ _ x _ _ |      ]
-[   %snare       d16 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ |      ]
-[   %hat         d16 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ |      ]
-}
-
-# remember this definition for use at runtime
-:export gameOver   [ @partA @partB @partA ]  !end ;
-# useful for making playback easy
+#!channel tri
+#o2 (p)
+#f2 | > b | e- | > e-
+#f8 g b < c | > > b- < c e > b- | < e- e- e- e- | > e- e- e- e-
