@@ -12,9 +12,10 @@ pub fn build(b: *std.build.Builder) void {
     const run_test = b.addTest("src/test.zig");
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&run_test.step);
+    const releaseMode = b.standardReleaseOptions();
 
     const lib = b.addSharedLibrary("cart", "src/main.zig", .unversioned);
-    lib.setBuildMode(.ReleaseSafe);
+    lib.setBuildMode(releaseMode);
     lib.setTarget(.{ .cpu_arch = .wasm32, .os_tag = .freestanding });
     lib.import_memory = true;
     lib.initial_memory = 65536;
@@ -23,23 +24,11 @@ pub fn build(b: *std.build.Builder) void {
     lib.stack_size = 8192;
     lib.install();
 
-    const debug = b.addSharedLibrary("cart", "src/main.zig", .unversioned);
-    debug.setBuildMode(.Debug);
-    debug.setTarget(.{ .cpu_arch = .wasm32, .os_tag = .freestanding });
-    debug.import_memory = true;
-    debug.initial_memory = 65536;
-    debug.max_memory = 65536;
-    debug.global_base = 6560;
-    debug.stack_size = 8192;
-    debug.install();
-
-    const debug_step = b.step("debug", "Create a debug build");
-    debug_step.dependOn(&debug.step);
-
     const w4_run = b.addSystemCommand(&[_][]const u8{ "w4", "run-native" });
     w4_run.addArtifactArg(lib);
 
     const run_step = b.step("run", "Run using `w4 run-native`");
+    lib.setBuildMode(.ReleaseFast);
     run_step.dependOn(&lib.step);
     run_step.dependOn(&w4_run.step);
 

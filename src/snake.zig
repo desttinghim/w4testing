@@ -3,13 +3,13 @@ const std = @import("std");
 const Point = @import("point.zig").Point;
 
 pub const Snake = struct {
-    body: std.BoundedArray(Point, 4000),
+    body: std.BoundedArray(Point, 400),
     direction: Point,
     nextDirectionOpt: ?Point,
 
     pub fn new() !@This() {
         return @This(){
-            .body = try std.BoundedArray(Point, 4000).init(0),
+            .body = try std.BoundedArray(Point, 400).init(0),
             .direction = Point.new(1, 0),
             .nextDirectionOpt = null,
         };

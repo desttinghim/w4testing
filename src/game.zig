@@ -41,7 +41,6 @@ pub fn start() !void {
     gameOver = &gameOverVal;
     getFruitVal = comptime try wael.parse(@embedFile("../assets/getFruit.txt"));
     getFruit = &getFruitVal;
-    wae.playSong(gameOver);
 }
 
 pub fn update() !void {
