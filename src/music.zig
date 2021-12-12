@@ -28,7 +28,7 @@ pub const Event = union(enum) {
     /// Outputs note with freq and values in register
     note: struct { freq: u16, duration: u8 },
     /// Jump to the specified section in the event list
-    goto: u16,
+    // goto: u16,
     /// Stops current cursor
     stop: void,
 
@@ -44,39 +44,42 @@ pub const Event = union(enum) {
     }
 };
 
+pub const Pattern = []Event;
+
+pub const ConductorEvent = union(enum) {
+    /// Channel to play
+    Play: u8,
+    Stop: u8,
+    /// Set loop beginning
+    Segno,
+    /// Goto loop beginning
+    DalSegno,
+    End,
+};
 // NOTE: Numbers chosen here are mostly arbitrary. At first I was going to
 // make passing a size variable at comptime possible, but I couldn't figure
 // out how I could store a pointer to the song in WAE and have arbitrary
 // comptime known sizes.
-pub const Song = struct {
-    /// Points to initial song sections
-    beginning: [4]u16,
-    /// The event list, maximum size of 2048 events.
-    events: BoundedArray(Event, listSize),
-
-    const listSize = 200;
-
-    pub fn init() !@This() {
-        return @This(){
-            .beginning = .{ listSize, listSize, listSize, listSize },
-            .events = try BoundedArray(Event, listSize).init(0),
-        };
-    }
-};
+pub const Conductor = []ConductorEvent;
 
 /// What channel each cursor corresponds to
 pub const CursorChannel = enum(u8) {
-    p1 = w4.TONE_PULSE1,
-    p2 = w4.TONE_PULSE2,
-    tri = w4.TONE_TRIANGLE,
+    pulse = w4.TONE_PULSE1,
+    triangle = w4.TONE_TRIANGLE,
     noise = w4.TONE_NOISE,
     any,
     none,
 };
 
+pub const Context = struct {
+    pattern: []Pattern,
+    conductor: []Conductor,
+};
+
 pub const WAE = struct {
+    context: *Context,
     /// Pointer to the song data structure
-    song: ?*Song = null,
+    conductor: Conductor = .{},
     /// Internal counter for timing
     counter: u32 = 0,
     /// Next tick to process commands at, per channel
@@ -98,13 +101,14 @@ pub const WAE = struct {
     /// It is assumed this will only be set at the beginning of a slide.
     freq: [4]?u16 = .{ 0, 0, 0, 0 },
 
-    pub fn init() @This() {
-        return @This(){};
+    pub fn init(context: *Context) @This() {
+        return @This(){
+            .context = context,
+        };
     }
 
     /// Clear state
     pub fn reset(this: *@This()) void {
-        this.counter = 0;
         this.next = .{ 0, 0, 0, 0 };
         this.cursor = .{ 0, 0, 0, 0 };
         this.param = .{ 0, 0, 0, 0 };
@@ -114,12 +118,9 @@ pub const WAE = struct {
     }
 
     /// Set the song to play next
-    pub fn playSong(this: *@This(), song: *Song) void {
+    pub fn playSong(this: *@This(), song: usize) void {
         this.reset();
-        this.song = song;
-        for (song.beginning) |b, i| {
-            this.cursor[i] = b;
-        }
+        this.song = &this.context.song[song];
     }
 
     const ChannelState = struct {
@@ -147,7 +148,7 @@ pub const WAE = struct {
         // Increment counter at end of function
         defer this.counter += 1;
         // Only attempt to update if we have a song
-        const song = this.song orelse return;
+        const conductor = this.song orelse return;
         const events = song.events.constSlice();
         for (this.cursor) |_, i| {
             var state = this.getChannelState(i);
