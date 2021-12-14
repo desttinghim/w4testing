@@ -8,7 +8,7 @@ comptime {
 pub const song =
     \\ # Tempo can be set by ticks
     \\ !spd 2
-    \\ :a p1 !mode 2
+    \\ :@a p1 !mode 2
     \\ o3 (mp)
     \\ c4 c g g | a a g2 | f4 f e e | d d c2
     \\ g4 g f f | e e d2 | g4 g f f | e e d2

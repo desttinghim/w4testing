@@ -145,7 +145,7 @@ test "time keeping" {
 
 const ReadMode = union(enum) { Define: []const u8, Set: ReadTo, Top };
 
-const Instrument = struct { adsr: u32 };
+const Instrument = struct { flags: u8, a: u8, d: u8, r: u8 };
 const InstrumentList = BoundedArray(Instrument, 64);
 
 const Section = struct { channel: CursorChannel, address: u16 };
@@ -167,8 +167,10 @@ pub fn parse(buf: []const u8) !Song {
 
     var currentOctave: u8 = 3;
     var currentDuration: u8 = 4;
+    var currentRows: u8 = 0;
     var currentDynamic: Dynamic = .mp;
     var currentChannel: ?CursorChannel = null;
+    var currentInstrument: ?Instrument = null;
 
     var sections = try SectionList.init(0);
     var instruments = try InstrumentList.init(0);
@@ -199,12 +201,22 @@ pub fn parse(buf: []const u8) !Song {
                         var position = @intCast(u16, song.events.len);
                         var section: Section = .{ .channel = channel, .address = position };
                         try sections.append(section);
-                        try symbols.append(Symbol{ .name = name, .index = sections.len - 1, .sym = .Section });
+                        try symbols.append(Symbol{ .name = name, .index = @intCast(u32, sections.len - 1), .sym = .Section });
                     },
                     '%' => {
                         // define an instrument
-                        try instruments.append(Instrument{ .adsr = try std.fmt.parseInt(u8, tok, 16) });
-                        try symbols.append(Symbol{ .name = name, .index = instruments.len - 1, .sym = .Instrument });
+                        var flags = try std.fmt.parseInt(u8, tok, 4);
+                        var intTok = tokIter.next() orelse return error.UnexpectedEOF;
+                        var a = try std.fmt.parseInt(u8, intTok, 16);
+
+                        intTok = tokIter.next() orelse return error.UnexpectedEOF;
+                        var d = try std.fmt.parseInt(u8, intTok, 16);
+
+                        intTok = tokIter.next() orelse return error.UnexpectedEOF;
+                        var r = try std.fmt.parseInt(u8, intTok, 16);
+
+                        try instruments.append(Instrument{ .flags = flags, .a = a, .d = d, .r = r });
+                        try symbols.append(Symbol{ .name = name, .index = @intCast(u32, instruments.len - 1), .sym = .Instrument });
                     },
                     else => return error.InvalidSymbol,
                 }
@@ -239,6 +251,7 @@ pub fn parse(buf: []const u8) !Song {
                     .adsr => try song.events.append(Event{ .adsr = try std.fmt.parseInt(u8, tok, 16) }),
                     .goto => {
                         for (symbols.constSlice()) |symbol| {
+                            if (symbol.sym != .Section) continue;
                             var section = sections.get(symbol.index);
                             var channel = currentChannel orelse .any;
                             if (section.channel != channel) continue;
@@ -259,6 +272,22 @@ pub fn parse(buf: []const u8) !Song {
                     },
                     '!' => {
                         readMode = .{ .Set = std.meta.stringToEnum(ReadTo, tok[1..tok.len]) orelse return error.UnknownGlobal };
+                    },
+                    '%' => {
+                        // try song.events.append(Event{ .param = mode });
+                        var instr: Instrument = undefined;
+                        for (symbols.constSlice()) |symbol| {
+                            if (symbol.sym != .Instrument) continue;
+                            if (!std.mem.eql(u8, symbol.name, tok)) continue;
+                            instr = instruments.get(symbol.index);
+                            break;
+                        } else return error.UnknownInstrument;
+                        try song.events.append(Event{ .param = instr.flags });
+
+                        var adsr = @intCast(u32, instr.a) << 24 | @intCast(u32, instr.d) << 16 | @intCast(u32, instr.r) << 8;
+                        try song.events.append(Event{ .adsr = adsr });
+
+                        currentInstrument = instr;
                     },
                     '|' => {
                         if (!time.barCheck()) return error.BarCheckFailed else continue;
@@ -287,6 +316,12 @@ pub fn parse(buf: []const u8) !Song {
 
                         // Update time keeping
                         var tick = time.tick(currentDuration);
+                        if (currentRows != tick) {
+                            if (currentInstrument) |instr| {
+                                const remainder = tick - (instr.a + instr.d + instr.r);
+                                try song.events.append(Event.init_adsr(instr.a, instr.d, instr.r, remainder));
+                            }
+                        }
 
                         if (note_res.note) |note| {
                             try song.events.append(Event.init_note(ntof(octave(currentOctave) + note), tick));

@@ -188,7 +188,7 @@ pub const WAE = struct {
                         state.next.* = this.counter + note.duration;
 
                         // debug
-                        util.trace("c {} f {} l {} adsr {x} vol {} flg {}  p {}", .{
+                        util.trace("c {d:>2} f {d:>3} l {d:>3} adsr {x:>8} vol {d:>3} flg {b:0>4}  p {b:0>4}", .{
                             i,
                             freq,
                             note.duration,
