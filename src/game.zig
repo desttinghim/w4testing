@@ -44,16 +44,31 @@ pub fn start() !void {
     getFruit = &getFruitVal;
 }
 
+const tilemap = [100]u8{
+    2,  2,  2,  2,  2,  2,  2,  2,  2,  2,
+    2,  2,  2,  2,  2,  2,  2,  2,  2,  2,
+    2,  2,  2,  2,  2,  2,  2,  2,  2,  2,
+    2,  2,  2,  2,  2,  2,  2,  2,  2,  2,
+    2,  2,  2,  2,  2,  2,  2,  2,  2,  2,
+    2,  2,  2,  2,  2,  2,  2,  2,  2,  2,
+    2,  2,  2,  2,  2,  2,  2,  2,  8,  9,
+    2,  2,  2,  2,  2,  2,  2,  2,  18, 19,
+    0,  1,  0,  1,  0,  1,  0,  1,  0,  1,
+    10, 11, 10, 11, 10, 11, 10, 11, 10, 11,
+};
+
 pub fn update() !void {
     frameCount += 1;
 
     w4.DRAW_COLORS.* = 0x0014;
     w4.blitSub(&assets.tileset, 0, 0, 16, 16, 0, 0, assets.tilesetWidth, assets.tilesetFlags);
-    var i: u8 = 0;
-    while (i < 100) : (i += 1) {
+    for (tilemap) |tile, index| {
+        var i = @intCast(u8, index);
         var x = (i % 10) * 16;
         var y = (i / 10) * 16;
-        w4.blitSub(&assets.tileset, x, y, 16, 16, x, y, assets.tilesetWidth, assets.tilesetFlags);
+        var sx = (tile % 10) * 16;
+        var sy = (tile / 10) * 16;
+        w4.blitSub(&assets.tileset, x, y, 16, 16, sx, sy, assets.tilesetWidth, assets.tilesetFlags);
     }
 
     wae.update();
