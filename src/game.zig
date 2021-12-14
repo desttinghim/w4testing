@@ -61,7 +61,6 @@ pub fn update() !void {
     frameCount += 1;
 
     w4.DRAW_COLORS.* = 0x0014;
-    w4.blitSub(&assets.tileset, 0, 0, 16, 16, 0, 0, assets.tilesetWidth, assets.tilesetFlags);
     for (tilemap) |tile, index| {
         var i = @intCast(u8, index);
         var x = (i % 10) * 16;
@@ -69,6 +68,15 @@ pub fn update() !void {
         var sx = (tile % 10) * 16;
         var sy = (tile / 10) * 16;
         w4.blitSub(&assets.tileset, x, y, 16, 16, sx, sy, assets.tilesetWidth, assets.tilesetFlags);
+    }
+    defer {
+        w4.DRAW_COLORS.* = 0x0014;
+        // Draw these items over everything else
+        var tile: u8 = 9;
+        var sx = (tile % 10) * 16;
+        var sy = (tile / 10) * 16;
+        w4.blitSub(&assets.tileset, 144, 96, 16, 16, sx, sy, assets.tilesetWidth, assets.tilesetFlags);
+        w4.blitSub(&assets.tileset, 144, 112, 16, 16, sx, sy + 16, assets.tilesetWidth, assets.tilesetFlags);
     }
 
     wae.update();
