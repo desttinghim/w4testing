@@ -38,7 +38,7 @@ pub const Snake = struct {
 
     pub fn draw(this: @This()) void {
         for (this.body.constSlice()) |part, i| {
-            w4.DRAW_COLORS.* = if (i == 0) 0x0034 else 0x0003;
+            w4.DRAW_COLORS.* = if (i == 0) 0x0034 else 0x0033;
             w4.rect(part.x * 8, part.y * 8, 8, 8);
         }
     }

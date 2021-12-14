@@ -1,5 +1,6 @@
 const w4 = @import("wasm4.zig");
 const std = @import("std");
+const assets = @import("assets");
 const palettes = @import("palettes.zig");
 const Point = @import("point.zig").Point;
 const Snake = @import("snake.zig").Snake;
@@ -31,7 +32,7 @@ pub fn start() !void {
     isDead = false;
     random = prng.random();
     frameCount = 0;
-    // w4.PALETTE.* = palettes.en4;
+    w4.PALETTE.* = palettes.en4;
     fruit = Point.new(rnd(20), rnd(20));
     try snake.body.resize(0);
     try snake.body.append(Point.new(3, 0));
@@ -45,6 +46,15 @@ pub fn start() !void {
 
 pub fn update() !void {
     frameCount += 1;
+
+    w4.DRAW_COLORS.* = 0x0014;
+    w4.blitSub(&assets.tileset, 0, 0, 16, 16, 0, 0, assets.tilesetWidth, assets.tilesetFlags);
+    var i: u8 = 0;
+    while (i < 100) : (i += 1) {
+        var x = (i % 10) * 16;
+        var y = (i / 10) * 16;
+        w4.blitSub(&assets.tileset, x, y, 16, 16, x, y, assets.tilesetWidth, assets.tilesetFlags);
+    }
 
     wae.update();
 
