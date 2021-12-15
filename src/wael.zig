@@ -11,8 +11,6 @@ const isDigit = std.ascii.isDigit;
 const toLower = std.ascii.toLower;
 
 /// Read locations
-const ReadTo = enum { adsr, spd, time, tempo, mode, goto };
-
 const Dynamic = enum(u8) { pp = 1, p = 3, mp = 6, mf = 12, f = 25, ff = 50, fff = 100 };
 
 /// Notes in music are based on fractions of a bar
@@ -143,15 +141,17 @@ test "time keeping" {
     try std.testing.expectEqual(@as(u32, 112), time.tempo);
 }
 
-const ReadMode = union(enum) { Define: []const u8, Set: ReadTo, Top };
+const ReadTo = enum { a, d, r, adsr, spd, time, tempo, mode, goto };
+
+const ReadMode = union(enum) { Define: u32, Set: struct { readTo: ReadTo, index: u32 }, Part: u32, Top };
 
 const Instrument = struct { flags: u8, a: u8, d: u8, r: u8 };
 const InstrumentList = BoundedArray(Instrument, 64);
 
-const Section = struct { channel: CursorChannel, address: u16 };
-const SectionList = BoundedArray(Section, 64);
+const Part = struct { channel: CursorChannel, address: u16 };
+const PartList = BoundedArray(Part, 64);
 
-const SymbolType = enum { Section, Instrument };
+const SymbolType = enum { Instrument, Part, Song, Sfx };
 const Symbol = struct { name: []const u8, sym: SymbolType, index: u32 };
 const SymbolList = BoundedArray(Symbol, 64);
 
@@ -169,10 +169,10 @@ pub fn parse(buf: []const u8) !Song {
     var currentDuration: u8 = 4;
     var currentRows: u8 = 0;
     var currentDynamic: Dynamic = .mp;
-    var currentChannel: ?CursorChannel = null;
+    // var currentChannel: ?CursorChannel = null;
     var currentInstrument: ?Instrument = null;
 
-    var sections = try SectionList.init(0);
+    var parts = try PartList.init(0);
     var instruments = try InstrumentList.init(0);
     var symbols = try SymbolList.init(0);
 
@@ -183,167 +183,235 @@ pub fn parse(buf: []const u8) !Song {
     var lineIter = std.mem.split(u8, buf, "\n");
     lineparse: while (lineIter.next()) |line| {
         var tokIter = std.mem.tokenize(u8, line, " \n\t");
-        while (tokIter.next()) |tok| switch (readMode) {
-            .Define => |name| {
-                switch (name[0]) {
-                    '@' => {
-                        // Begin a section
-                        // set the channel
-                        if (currentChannel) |_| {
-                            // Place goto command in event list w/ temporary value
+        while (tokIter.next()) |tok| {
+            if (tok[0] == '#') continue :lineparse;
+            switch (readMode) {
+                .Define => |defi| {
+                    var symbol = symbols.get(defi);
+                    if (tok[0] == ';') {
+                        readMode = .Top;
+                        if (symbol.sym == .Part) {
                             var position = @intCast(u16, song.events.len);
                             try song.events.append(Event{ .goto = position });
                         }
-                        // std.log.warn("{} {} {s}", .{ readMode, currentChannel, tok });
-                        const channel = std.meta.stringToEnum(CursorChannel, tok) orelse return error.UnknownChannel;
-                        currentChannel = channel;
-
-                        var position = @intCast(u16, song.events.len);
-                        var section: Section = .{ .channel = channel, .address = position };
-                        try sections.append(section);
-                        try symbols.append(Symbol{ .name = name, .index = @intCast(u32, sections.len - 1), .sym = .Section });
-                    },
-                    '%' => {
-                        // define an instrument
-                        var flags = try std.fmt.parseInt(u8, tok, 4);
-                        var intTok = tokIter.next() orelse return error.UnexpectedEOF;
-                        var a = try std.fmt.parseInt(u8, intTok, 16);
-
-                        intTok = tokIter.next() orelse return error.UnexpectedEOF;
-                        var d = try std.fmt.parseInt(u8, intTok, 16);
-
-                        intTok = tokIter.next() orelse return error.UnexpectedEOF;
-                        var r = try std.fmt.parseInt(u8, intTok, 16);
-
-                        try instruments.append(Instrument{ .flags = flags, .a = a, .d = d, .r = r });
-                        try symbols.append(Symbol{ .name = name, .index = @intCast(u32, instruments.len - 1), .sym = .Instrument });
-                    },
-                    else => return error.InvalidSymbol,
-                }
-                readMode = .Top;
-            },
-            .Set => |readTo| {
-                switch (readTo) {
-                    .spd => {
-                        time.setSpeed(try std.fmt.parseInt(u8, tok, 10));
-                    },
-                    .time => {
-                        time.setSig(tok[0] - '0', tok[2] - '0');
-                    },
-                    .tempo => {
-                        time.setTempo(try std.fmt.parseInt(u8, tok, 10));
-                    },
-                    .mode => {
-                        if (currentChannel) |channel| {
-                            if (channel == .p1 or channel == .p2) {
-                                const modeint = try std.fmt.parseInt(u8, tok, 10);
-                                const mode = switch (modeint) {
-                                    1 => Flag.Mode1,
-                                    2 => Flag.Mode2,
-                                    3 => Flag.Mode3,
-                                    4 => Flag.Mode4,
-                                    else => return error.UnknownMode,
-                                };
-                                try song.events.append(Event{ .param = mode });
+                        continue; // End definition
+                    }
+                    switch (symbol.sym) {
+                        .Part => {
+                            var part = parts.get(symbol.index);
+                            switch (tok[0]) {
+                                '@' => {
+                                    part.channel = std.meta.stringToEnum(CursorChannel, tok[1..tok.len]) orelse return error.InvalidChannel;
+                                    parts.set(symbol.index, part);
+                                },
+                                '[' => {
+                                    // Place goto command in event list w/ temporary value
+                                    var position = @intCast(u16, song.events.len);
+                                    part.address = position;
+                                    parts.set(symbol.index, part);
+                                    readMode = .{ .Part = defi };
+                                },
+                                else => return error.InvalidToken,
                             }
-                        } else return error.InvalidMode;
-                    },
-                    .adsr => try song.events.append(Event{ .adsr = try std.fmt.parseInt(u8, tok, 16) }),
-                    .goto => {
-                        for (symbols.constSlice()) |symbol| {
-                            if (symbol.sym != .Section) continue;
-                            var section = sections.get(symbol.index);
-                            var channel = currentChannel orelse .any;
-                            if (section.channel != channel) continue;
-                            if (std.mem.eql(u8, symbol.name, tok)) {
-                                try song.events.append(Event{ .goto = section.address });
+                        },
+                        .Instrument => {
+                            switch (tok[0]) {
+                                '!' => {
+                                    readMode = .{ .Set = .{
+                                        .readTo = std.meta.stringToEnum(ReadTo, tok[1..tok.len]) orelse return error.UnknownGlobal,
+                                        .index = defi,
+                                    } };
+                                },
+                                else => return error.InvalidToken,
+                            }
+                        },
+                        else => return error.Unimplemented,
+                    }
+                    // readMode = .Top;
+                },
+                .Set => |s| {
+                    switch (s.readTo) {
+                        .a => {
+                            var a = try std.fmt.parseInt(u8, tok, 16);
+                            var i = instruments.get(symbols.get(s.index).index);
+                            i.a = a;
+                            instruments.set(s.index, i);
+                            readMode = .{ .Define = s.index };
+                            continue;
+                        },
+                        .d => {
+                            var d = try std.fmt.parseInt(u8, tok, 16);
+                            var i = instruments.get(symbols.get(s.index).index);
+                            i.d = d;
+                            instruments.set(s.index, i);
+                            readMode = .{ .Define = s.index };
+                            continue;
+                        },
+                        .r => {
+                            var r = try std.fmt.parseInt(u8, tok, 16);
+                            var i = instruments.get(symbols.get(s.index).index);
+                            i.r = r;
+                            instruments.set(s.index, i);
+                            readMode = .{ .Define = s.index };
+                            continue;
+                        },
+                        .spd => {
+                            time.setSpeed(try std.fmt.parseInt(u8, tok, 10));
+                        },
+                        .time => {
+                            time.setSig(tok[0] - '0', tok[2] - '0');
+                        },
+                        .tempo => {
+                            time.setTempo(try std.fmt.parseInt(u8, tok, 10));
+                        },
+                        .mode => {
+                            var flags = (try std.fmt.parseInt(u8, tok, 10)) << 2;
+                            var i = instruments.get(symbols.get(s.index).index);
+                            i.flags = flags;
+                            instruments.set(s.index, i);
+                            readMode = .{ .Define = s.index };
+                            continue;
+                        },
+                        .adsr => try song.events.append(Event{ .adsr = try std.fmt.parseInt(u8, tok, 16) }),
+                        .goto => {
+                            var currentPart = parts.get(symbols.get(s.index).index);
+                            for (symbols.constSlice()) |symbol| {
+                                if (symbol.sym != .Part) continue;
+                                var part = parts.get(symbol.index);
+                                if (part.channel != currentPart.channel) continue;
+                                if (std.mem.eql(u8, symbol.name, tok)) {
+                                    try song.events.append(Event{ .goto = part.address });
+                                    break;
+                                }
+                            } else {
+                                std.log.warn("Unknown Label {s}", .{tok});
+                                return error.UnknownLabel;
+                            }
+                        },
+                    }
+                    readMode = if (s.index == 255) .Top else .{ .Part = s.index };
+                },
+                .Part => |defi| {
+                    switch (toLower(tok[0])) {
+                        ']' => {
+                            try song.events.append(Event.stop);
+                            readMode = .{ .Define = defi };
+                        },
+                        '!' => {
+                            readMode = .{ .Set = .{
+                                .readTo = std.meta.stringToEnum(ReadTo, tok[1..tok.len]) orelse return error.UnknownGlobal,
+                                .index = defi,
+                            } };
+                        },
+                        '%' => {
+                            // try song.events.append(Event{ .param = mode });
+                            var instr: Instrument = undefined;
+                            for (symbols.constSlice()) |symbol| {
+                                if (symbol.sym != .Instrument) continue;
+                                if (!std.mem.eql(u8, symbol.name, tok[1..tok.len])) continue;
+                                instr = instruments.get(symbol.index);
                                 break;
+                            } else {
+                                std.log.warn("{s}", .{tok});
+                                return error.UnknownInstrument;
                             }
-                        } else return error.UnknownLabel;
-                    },
-                }
-                readMode = .Top;
-            },
-            .Top => {
-                switch (toLower(tok[0])) {
-                    '#' => continue :lineparse,
-                    ':' => {
-                        readMode = .{ .Define = tok[1..tok.len] };
-                    },
-                    '!' => {
-                        readMode = .{ .Set = std.meta.stringToEnum(ReadTo, tok[1..tok.len]) orelse return error.UnknownGlobal };
-                    },
-                    '%' => {
-                        // try song.events.append(Event{ .param = mode });
-                        var instr: Instrument = undefined;
-                        for (symbols.constSlice()) |symbol| {
-                            if (symbol.sym != .Instrument) continue;
-                            if (!std.mem.eql(u8, symbol.name, tok)) continue;
-                            instr = instruments.get(symbol.index);
-                            break;
-                        } else return error.UnknownInstrument;
-                        try song.events.append(Event{ .param = instr.flags });
+                            try song.events.append(Event{ .param = instr.flags });
 
-                        var adsr = @intCast(u32, instr.a) << 24 | @intCast(u32, instr.d) << 16 | @intCast(u32, instr.r) << 8;
-                        try song.events.append(Event{ .adsr = adsr });
-
-                        currentInstrument = instr;
-                    },
-                    '|' => {
-                        if (!time.barCheck()) return error.BarCheckFailed else continue;
-                    },
-                    // octave up
-                    '>' => currentOctave = std.math.sub(u8, currentOctave, 1) catch return error.OctaveTooLow,
-                    // octave down
-                    '<' => currentOctave = std.math.add(u8, currentOctave, 1) catch return error.OctaveTooHigh,
-                    '(' => {
-                        currentDynamic = std.meta.stringToEnum(Dynamic, tok[1 .. tok.len - 1]) orelse return error.InvalidDynamic;
-                        try song.events.append(Event{ .vol = @enumToInt(currentDynamic) });
-                    },
-                    'o' => if (tok.len > 1) {
-                        currentOctave = (tok[1] - '0');
-                    } else return error.MissingOctaveNumber,
-                    else => {
-                        // std.log.warn("{s}", .{tok});
-                        var note_res = try parseNote(tok);
-                        if (tok.len > 1 and note_res.end != tok.len) {
-                            var duration_res = try parseDuration(tok[note_res.end + 1 .. tok.len]);
-                            if (duration_res.duration != 0 and duration_res.end > 0) {
-                                currentDuration = duration_res.duration;
+                            currentInstrument = instr;
+                        },
+                        '|' => {
+                            if (!time.barCheck()) return error.BarCheckFailed else continue;
+                        },
+                        // octave up
+                        '>' => currentOctave = std.math.sub(u8, currentOctave, 1) catch return error.OctaveTooLow,
+                        // octave down
+                        '<' => currentOctave = std.math.add(u8, currentOctave, 1) catch return error.OctaveTooHigh,
+                        '(' => {
+                            currentDynamic = std.meta.stringToEnum(Dynamic, tok[1 .. tok.len - 1]) orelse return error.InvalidDynamic;
+                            try song.events.append(Event{ .vol = @enumToInt(currentDynamic) });
+                        },
+                        'o' => if (tok.len > 1) {
+                            currentOctave = (tok[1] - '0');
+                        } else return error.MissingOctaveNumber,
+                        else => {
+                            // std.log.warn("{s}", .{tok});
+                            var note_res = try parseNote(tok);
+                            if (tok.len > 1 and note_res.end != tok.len) {
+                                var duration_res = try parseDuration(tok[note_res.end + 1 .. tok.len]);
+                                if (duration_res.duration != 0 and duration_res.end > 0) {
+                                    currentDuration = duration_res.duration;
+                                }
+                                // TODO: implement ties (~)
                             }
-                            // TODO: implement ties (~)
-                        }
 
-                        // Update time keeping
-                        var tick = time.tick(currentDuration);
-                        if (currentRows != tick) {
-                            if (currentInstrument) |instr| {
-                                const remainder = tick - (instr.a + instr.d + instr.r);
-                                try song.events.append(Event.init_adsr(instr.a, instr.d, instr.r, remainder));
+                            // Update time keeping
+                            var tick = time.tick(currentDuration);
+                            if (currentRows != tick) {
+                                if (currentInstrument) |instr| {
+                                    const remainder = tick - (instr.a + instr.d + instr.r);
+                                    try song.events.append(Event.init_adsr(instr.a, instr.d, remainder, instr.r));
+                                    currentRows = @intCast(u8, tick);
+                                }
                             }
-                        }
 
-                        if (note_res.note) |note| {
-                            try song.events.append(Event.init_note(ntof(octave(currentOctave) + note), tick));
-                        } else {
-                            try song.events.append(Event.init_rest(tick));
-                        }
-                    },
-                }
-            },
-        };
+                            if (note_res.note) |note| {
+                                try song.events.append(Event.init_note(ntof(octave(currentOctave) + note), tick));
+                            } else {
+                                try song.events.append(Event.init_rest(tick));
+                            }
+                        },
+                    }
+                },
+                .Top => {
+                    switch (toLower(tok[0])) {
+                        ':' => {
+                            var t = std.meta.stringToEnum(SymbolType, tokIter.next() orelse return error.UnexpectedEOF) orelse return error.InvalidType;
+                            var name = tokIter.next() orelse return error.UnexpectedEOF;
+                            switch (t) {
+                                .Instrument => {
+                                    try instruments.append(Instrument{ .flags = 0, .a = 0, .d = 0, .r = 0 });
+                                    try symbols.append(Symbol{ .name = name, .index = @intCast(u32, instruments.len - 1), .sym = .Instrument });
+                                },
+                                .Song => {
+                                    return error.Unimplemented;
+                                },
+                                .Part => {
+                                    var part: Part = .{ .channel = .none, .address = 255 };
+                                    try parts.append(part);
+                                    try symbols.append(Symbol{ .name = name, .index = @intCast(u32, parts.len - 1), .sym = .Part });
+                                },
+                                .Sfx => {
+                                    return error.Unimplemented;
+                                },
+                            }
+                            readMode = .{ .Define = @intCast(u32, symbols.len - 1) };
+                        },
+                        '!' => {
+                            readMode = .{ .Set = .{
+                                .readTo = std.meta.stringToEnum(ReadTo, tok[1..tok.len]) orelse return error.UnknownGlobal,
+                                .index = 255,
+                            } };
+                        },
+                        else => {
+                            std.log.warn("Invalid Token: {s}", .{tok});
+                            return error.InvalidToken;
+                        },
+                    }
+                },
+            }
+        }
     }
 
-    // for (sections.constSlice()) |sect, i| {
+    // for (parts.constSlice()) |sect, i| {
     //     const name = if (sect.name.len > 0) sect.name else "(unnamed)";
     //     std.log.warn("{} {s}: {}", .{ i, name, sect.address });
     // }
 
-    // Find first section for each channel
+    // Find first part for each channel
     for (song.beginning) |begin, chani| {
         const channel = @intToEnum(CursorChannel, chani);
         if (begin >= song.events.len) {
-            for (sections.constSlice()) |sect| {
+            for (parts.constSlice()) |sect| {
                 if (sect.channel != channel) continue;
                 song.beginning[chani] = sect.address;
                 break;
@@ -352,16 +420,7 @@ pub fn parse(buf: []const u8) !Song {
     }
     for (song.events.slice()) |event, i| {
         if (event == Event.goto and event.goto == i) {
-            var channel = CursorChannel.none;
-            for (sections.constSlice()) |sect| {
-                if (sect.address < i) {
-                    channel = sect.channel;
-                    continue;
-                }
-                if (sect.channel != channel) continue;
-                song.events.set(i, Event{ .goto = sect.address });
-                break;
-            } else song.events.set(i, Event.stop);
+            song.events.set(i, Event.stop);
         }
     }
 

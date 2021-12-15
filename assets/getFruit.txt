@@ -1,6 +1,9 @@
 !tempo 112
 !time 4/4
 
-:@part1 p1 !mode 2 !adsr 0000000A
-(mp) o3
-c16 d e f g
+: Instrument basic !mode 2 !a 2 ;
+
+: Part part1 @p1 [ %basic
+    (mp) o3
+    c16 d e f g
+] ;

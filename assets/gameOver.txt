@@ -1,29 +1,28 @@
 !tempo 112
 !time 4/4
 
-:%short 30 0 0 2
-:%med   20 0 0 4
-:%bass  11 0 0 F
-:%kick  03 0 0 4
+: Instrument short !mode 3 !r 2 ;
+: Instrument med   !mode 2 !r 4 ;
+: Instrument bass  !mode 1 !r F ;
+: Instrument kick  !r 4 ;
 
-:@a p1 %short
+: Part a @p1 [ %short
 (mf) o4  c8 d g  c d g  c d  | > a b < d  > a b < d  > a b |
          c8 d g  c d g  c d  | > a b < d  > a b < d  > a b |
+] ;
 
-:@a p2 %bass
-(mf) o3  c2 g | > a < d |
-        c2 g | > a < d |
-!goto @a
+: Part a @p2 [ %bass
+    (mf) o3  c2 g | > a < d |
+             c2 g | > a < d |
+    !goto a
+] ;
 
-:@b p1 %med
-(mf) o4  c8 d g  c d g  c d  | > a b < d  > a b < d  > a b |
-!goto @a
+: Part b @p1 [ %med
+    (mf) o4  c8 d g  c d g  c d  | > a b < d  > a b < d  > a b |
+    !goto a
+] ;
 
-:@drumloop noise
-%kick (p) o4 a16 r r a r a r r a r r r r a r r |
-!goto @drumloop
-
-#!channel tri
-#o2 (p)
-#f2 | > b | e- | > e-
-#f8 g b < c | > > b- < c e > b- | < e- e- e- e- | > e- e- e- e-
+: Part drumloop @noise [
+    %kick (p) o4 a16 r r a r a r r a r r r r a r r |
+    !goto drumloop
+] ;
