@@ -6,15 +6,20 @@ const Point = @import("point.zig").Point;
 const Snake = @import("snake.zig").Snake;
 const music = @import("music.zig");
 const WAE = music.WAE;
-const Song = music.Song;
 const wael = @import("wael.zig");
 
-var gameOverVal: Song = undefined;
-var gameOver: *Song = undefined;
-var getFruitVal: Song = undefined;
-var getFruit: *Song = undefined;
+var musicContext: music.Context = undefined;
+var wae: WAE = undefined;
 
-var wae = WAE.init();
+const songs = std.ComptimeStringMap(u16, .{
+    .{ "gameOver", 0 },
+    .{ "getFruit", 1 },
+});
+
+fn playSong(str: []const u8) void {
+    if (songs.get(str)) |index| wae.playSong(index);
+}
+
 var snake = Snake.new() catch @panic("");
 var fruit: Point = undefined;
 var prevState: u8 = 0;
@@ -38,10 +43,8 @@ pub fn start() !void {
     try snake.body.append(Point.new(3, 0));
     try snake.body.append(Point.new(2, 0));
     try snake.body.append(Point.new(1, 0));
-    gameOverVal = comptime try wael.parse(@embedFile("../assets/gameOver.txt"));
-    gameOver = &gameOverVal;
-    getFruitVal = comptime try wael.parse(@embedFile("../assets/getFruit.txt"));
-    getFruit = &getFruitVal;
+    musicContext = comptime try wael.parse(@embedFile("../assets/music.txt"));
+    wae = WAE.init(musicContext);
 }
 
 const tilemap = [100]u8{
@@ -90,7 +93,7 @@ pub fn update() !void {
         }
 
         var checkDead = snake.isDead();
-        if (checkDead and !isDead) wae.playSong(gameOver);
+        if (checkDead and !isDead) playSong("gameOver");
         isDead = checkDead;
 
         const body = snake.body.constSlice();
@@ -99,7 +102,7 @@ pub fn update() !void {
             try snake.body.append(Point.new(tail.x, tail.y));
             fruit.x = rnd(20);
             fruit.y = rnd(20);
-            wae.playSong(getFruit);
+            playSong("getFruit");
             // w4.tone(0 | (1000 << 16), 0 | (15 << 8), 100, w4.TONE_TRIANGLE);
         }
     }

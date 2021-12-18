@@ -24,7 +24,7 @@ test "parse twinkle twinkle little star" {
 test "parse getFruit" {
     const s1 = try wael.parse(@embedFile("../assets/getFruit.txt"));
 
-    std.log.warn("{any}", .{s1.beginning});
+    std.log.warn("{any}", .{s1.songs});
     for (s1.events.constSlice()) |e, i| {
         std.log.warn("{}: {}", .{ i, e });
     }
@@ -33,8 +33,21 @@ test "parse getFruit" {
 test "parse gameOver" {
     const s2 = try wael.parse(@embedFile("../assets/gameOver.txt"));
 
-    std.log.warn("{any}", .{s2.beginning});
+    std.log.warn("{any}", .{s2.songs});
     for (s2.events.constSlice()) |e, i| {
+        std.log.warn("{}: {}", .{ i, e });
+    }
+}
+
+test "parse music" {
+    const c = try wael.parse(@embedFile("../assets/music.txt"));
+
+    for (c.songs.constSlice()) |s, si| {
+        for (s.constSlice()) |e, i| {
+            std.log.warn("{}-{}: {}", .{ si, i, e });
+        }
+    }
+    for (c.events.constSlice()) |e, i| {
         std.log.warn("{}: {}", .{ i, e });
     }
 }

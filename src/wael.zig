@@ -4,7 +4,9 @@ const BoundedArray = std.BoundedArray;
 const Event = music.Event;
 const Flag = music.Flag;
 const Song = music.Song;
+const Context = music.Context;
 const CursorChannel = music.CursorChannel;
+const ControlEvent = music.ControlEvent;
 
 // utility functions
 const isDigit = std.ascii.isDigit;
@@ -171,9 +173,9 @@ const SymbolList = BoundedArray(Symbol, 64);
 /// WASM4 environment. No attempt has been made to generalize it, but feel free
 /// to make variations that work in different environments.
 /// TODO: Make it work at runtime
-pub fn parse(buf: []const u8) !Song {
+pub fn parse(buf: []const u8) !Context {
     @setEvalBranchQuota(20000);
-    var song = try Song.init();
+    var song = try Context.init();
 
     var currentOctave: u8 = 3;
     var currentDuration: u8 = 4;
@@ -202,10 +204,7 @@ pub fn parse(buf: []const u8) !Song {
                     var symbol = symbols.get(defi);
                     if (tok[0] == ';') {
                         readMode = .Top;
-                        if (symbol.sym == .Part) {
-                            var position = @intCast(u16, song.events.len);
-                            try song.events.append(Event{ .goto = position });
-                        }
+                        if (symbol.sym == .Song) try song.songs.slice()[symbol.index].append(.end);
                         continue; // End definition
                     }
                     switch (symbol.sym) {
@@ -249,7 +248,39 @@ pub fn parse(buf: []const u8) !Song {
                                 else => return error.InvalidToken,
                             }
                         },
-                        else => return error.Unimplemented,
+                        .Song => {
+                            var s = &song.songs.slice()[symbol.index];
+                            if (std.mem.eql(u8, tok, "play")) {
+                                const channelTok = tokIter.next() orelse return error.UnexpectedEOF;
+                                const partTok = tokIter.next() orelse return error.UnexpectedEOF;
+
+                                const channel = std.meta.stringToEnum(CursorChannel, channelTok[1..channelTok.len]) orelse return error.InvalidChannel;
+                                const part = for (symbols.constSlice()) |sym| {
+                                    if (sym.sym != .Part) continue;
+                                    var part = parts.get(sym.index);
+                                    if (part.channel != channel) continue;
+                                    if (std.mem.eql(u8, sym.name, partTok)) {
+                                        break part.address;
+                                    }
+                                } else {
+                                    std.log.warn("Unknown part {s}", .{partTok});
+                                    return error.UnknownLabel;
+                                };
+
+                                try s.append(ControlEvent.init_play(channel, part));
+                            } else if (std.mem.eql(u8, tok, "at")) {
+                                const Where = enum(u8) { begin = 0, end = 1 };
+                                const whereTok = tokIter.next() orelse return error.UnexpectedEOF;
+                                const barNumberTok = tokIter.next() orelse return error.UnexpectedEOF;
+
+                                const where = std.meta.stringToEnum(Where, whereTok) orelse return error.InvalidWhere;
+                                const bars = (try std.fmt.parseInt(u16, barNumberTok, 10)) + @enumToInt(where);
+
+                                try s.append(ControlEvent{ .wait = @intCast(u16, time.getTicks(1) * bars) });
+                            } else if (std.mem.eql(u8, tok, "dalSegno")) {
+                                try s.append(ControlEvent{ .goto = 0 });
+                            } else return error.InvalidSongCommand;
+                        },
                     }
                 },
                 .Set => |sym| {
@@ -300,15 +331,9 @@ pub fn parse(buf: []const u8) !Song {
                     var part = parts.get(symbols.get(defi).index);
                     switch (toLower(tok[0])) {
                         ']' => {
-                            try song.events.append(Event.stop);
+                            try song.events.append(Event.end);
                             readMode = .{ .Define = defi };
                         },
-                        // '!' => {
-                        //     readMode = .{ .Set = .{
-                        //         .readTo = std.meta.stringToEnum(ReadToSymbol, tok[1..tok.len]) orelse return error.UnknownGlobal,
-                        //         .index = defi,
-                        //     } };
-                        // },
                         '%' => {
                             // try song.events.append(Event{ .param = mode });
                             var tokInstr = tok[1..tok.len];
@@ -408,7 +433,8 @@ pub fn parse(buf: []const u8) !Song {
                                     try symbols.append(Symbol{ .name = name, .index = @intCast(u32, instruments.len - 1), .sym = .Instrument });
                                 },
                                 .Song => {
-                                    return error.Unimplemented;
+                                    try song.songs.append(try Song.init(0));
+                                    try symbols.append(Symbol{ .name = name, .index = @intCast(u32, song.songs.len - 1), .sym = .Song });
                                 },
                                 .Part => {
                                     var part: Part = .{ .channel = .none, .address = 255, .is_pitched = false };
@@ -436,30 +462,6 @@ pub fn parse(buf: []const u8) !Song {
             }
         }
     }
-
-    // for (parts.constSlice()) |sect, i| {
-    //     const name = if (sect.name.len > 0) sect.name else "(unnamed)";
-    //     std.log.warn("{} {s}: {}", .{ i, name, sect.address });
-    // }
-
-    // Find first part for each channel
-    for (song.beginning) |begin, chani| {
-        const channel = @intToEnum(CursorChannel, chani);
-        if (begin >= song.events.len) {
-            for (parts.constSlice()) |sect| {
-                if (sect.channel != channel) continue;
-                song.beginning[chani] = sect.address;
-                break;
-            }
-        }
-    }
-    for (song.events.slice()) |event, i| {
-        if (event == Event.goto and event.goto == i) {
-            song.events.set(i, Event.stop);
-        }
-    }
-
-    try song.events.append(Event.stop);
 
     return song;
 }

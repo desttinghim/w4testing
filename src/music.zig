@@ -27,10 +27,8 @@ pub const Event = union(enum) {
     slide: u16,
     /// Outputs note with freq and values in register
     note: struct { freq: u16, duration: u8 },
-    /// Jump to the specified section in the event list
-    goto: u16,
-    /// Stops current cursor
-    stop: void,
+    /// Signifies end of part, tells cursor to go back to beginning
+    end,
 
     const Self = @This();
     pub fn init_adsr(a: u32, d: u32, s: u32, r: u32) Self {
@@ -44,22 +42,37 @@ pub const Event = union(enum) {
     }
 };
 
+pub const ControlEvent = union(enum) {
+    play: struct { channel: CursorChannel, pattern: u8 },
+    wait: u16,
+    goto: u16,
+    end,
+
+    pub fn init_play(channel: CursorChannel, pattern: u32) @This() {
+        return @This(){ .play = .{ .channel = channel, .pattern = @intCast(u8, pattern) } };
+    }
+};
+
+const CONTROL_MAX = 20;
+pub const Song = BoundedArray(ControlEvent, CONTROL_MAX);
+
 // NOTE: Numbers chosen here are mostly arbitrary. At first I was going to
 // make passing a size variable at comptime possible, but I couldn't figure
 // out how I could store a pointer to the song in WAE and have arbitrary
 // comptime known sizes.
-pub const Song = struct {
-    /// Points to initial song sections
-    beginning: [4]u16,
-    /// The event list, maximum size of 2048 events.
-    events: BoundedArray(Event, listSize),
+pub const Context = struct {
+    /// The event list, maximum size of 200 events.
+    events: BoundedArray(Event, EVENT_MAX),
+    /// Song list
+    songs: BoundedArray(Song, SONG_MAX),
 
-    const listSize = 200;
+    const EVENT_MAX = 255;
+    const SONG_MAX = 10;
 
     pub fn init() !@This() {
         return @This(){
-            .beginning = .{ listSize, listSize, listSize, listSize },
-            .events = try BoundedArray(Event, listSize).init(0),
+            .events = try BoundedArray(Event, EVENT_MAX).init(0),
+            .songs = try BoundedArray(Song, SONG_MAX).init(0),
         };
     }
 };
@@ -76,13 +89,21 @@ pub const CursorChannel = enum(u8) {
 
 pub const WAE = struct {
     /// Pointer to the song data structure
-    song: ?*Song = null,
+    context: Context,
+    /// Index of the current song
+    song: ?u16 = null,
+    /// Index into current song
+    contextCursor: u16 = 0,
+    /// Next frame to update contextCursor
+    contextNext: u32 = 0,
     /// Internal counter for timing
     counter: u32 = 0,
     /// Next tick to process commands at, per channel
     next: [4]u32 = .{ 0, 0, 0, 0 },
     /// Indexes into song event list. Each audio channel has one
-    cursor: [4]u32 = .{ 0, 0, 0, 0 },
+    cursor: [4]?u32 = .{ null, null, null, null },
+    /// Beginning of current loop
+    begin: [4]u32 = .{ 0, 0, 0, 0 },
     /// Parameter byte for each channel. Only used by
     /// PULSE1 and PULSE2 for setting duty cycle
     param: [4]u8 = .{ 0, 0, 0, 0 },
@@ -98,15 +119,21 @@ pub const WAE = struct {
     /// It is assumed this will only be set at the beginning of a slide.
     freq: [4]?u16 = .{ 0, 0, 0, 0 },
 
-    pub fn init() @This() {
-        return @This(){};
+    pub fn init(context: Context) @This() {
+        return @This(){
+            .context = context,
+        };
     }
 
     /// Clear state
     pub fn reset(this: *@This()) void {
+        this.song = null;
+        this.contextCursor = 0;
+        this.contextNext = 0;
+        this.begin = .{ 0, 0, 0, 0 };
         this.counter = 0;
         this.next = .{ 0, 0, 0, 0 };
-        this.cursor = .{ 0, 0, 0, 0 };
+        this.cursor = .{ null, null, null, null };
         this.param = .{ 0, 0, 0, 0 };
         this.adsr = .{ 0, 0, 0, 0 };
         this.volume = .{ 0, 0, 0, 0 };
@@ -114,15 +141,13 @@ pub const WAE = struct {
     }
 
     /// Set the song to play next
-    pub fn playSong(this: *@This(), song: *Song) void {
+    pub fn playSong(this: *@This(), song: u16) void {
         this.reset();
         this.song = song;
-        for (song.beginning) |b, i| {
-            this.cursor[i] = b;
-        }
     }
 
     const ChannelState = struct {
+        begin: *u32,
         next: *u32,
         cursor: *u32,
         param: *u8,
@@ -133,8 +158,9 @@ pub const WAE = struct {
     /// Returns pointers to every register
     fn getChannelState(this: *@This(), channel: usize) ChannelState {
         return ChannelState{
+            .begin = &this.begin[channel],
             .next = &this.next[channel],
-            .cursor = &this.cursor[channel],
+            .cursor = &this.cursor[channel].?,
             .param = &this.param[channel],
             .adsr = &this.adsr[channel],
             .volume = &this.volume[channel],
@@ -142,29 +168,53 @@ pub const WAE = struct {
         };
     }
 
+    pub fn _controlUpdate(this: *@This()) bool {
+        var songIndex = this.song orelse return false;
+        var song = this.context.songs.slice()[songIndex].slice();
+        var event = song[this.contextCursor];
+        while (this.contextNext <= this.counter) {
+            util.trace("{}", .{event});
+            switch (event) {
+                .play => |p| {
+                    const channel = @enumToInt(p.channel);
+                    this.cursor[channel] = p.pattern;
+                    this.begin[channel] = p.pattern;
+                },
+                .wait => |w| this.contextNext = this.counter + w,
+                .goto => |a| this.contextCursor = a,
+                .end => {
+                    this.song = null;
+                    break;
+                },
+            }
+            if (event != .goto) this.contextCursor += 1;
+            event = song[this.contextCursor];
+        }
+        return true;
+    }
+
     /// Call once per frame. Frames are expected to be at 60 fps.
     pub fn update(this: *@This()) void {
+        if (!this._controlUpdate()) return;
         // Increment counter at end of function
         defer this.counter += 1;
         // Only attempt to update if we have a song
-        const song = this.song orelse return;
+        const song = this.context;
         const events = song.events.constSlice();
-        for (this.cursor) |_, i| {
+        for (this.cursor) |c, i| {
+            if (c == null) continue;
             var state = this.getChannelState(i);
             // Stop once the end of the song is reached
             if (state.cursor.* >= song.events.len) continue;
             // Get current event
             var event = events[state.cursor.*];
-            if (event == .stop) continue;
             // Wait to play note until current note finishes
             if (event == .note and this.counter < state.next.*) continue;
             while (state.next.* <= this.counter) {
                 event = events[state.cursor.*];
                 switch (event) {
-                    .stop => continue,
-                    .goto => |goto| {
-                        state.cursor.* = goto;
-                        continue; // Explicit continue here to skip counter increment
+                    .end => {
+                        state.cursor.* = state.begin.*;
                     },
                     .param => |param| {
                         // w4.trace("param");
