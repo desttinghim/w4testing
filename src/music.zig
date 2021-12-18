@@ -180,7 +180,7 @@ pub const WAE = struct {
                     .note => |note| {
                         var freq = if (state.freq.*) |freq| (freq |
                             (@intCast(u32, note.freq) << 16)) else note.freq;
-                        state.freq.* = null;
+                        defer state.freq.* = null;
                         var flags = @intCast(u8, i) | state.param.*;
 
                         w4.tone(freq, state.adsr.*, state.volume.*, flags);
@@ -188,9 +188,10 @@ pub const WAE = struct {
                         state.next.* = this.counter + note.duration;
 
                         // debug
-                        util.trace("c {d:>2} f {d:>3} l {d:>3} adsr {x:>8} vol {d:>3} flg {b:0>4}  p {b:0>4}", .{
+                        util.trace("c {d:>2} f {d:>4} g {d:>4} l {d:>3} adsr {x:>8} vol {d:>3} flg {b:0>4}  p {b:0>4}", .{
                             i,
-                            freq,
+                            note.freq,
+                            if (state.freq.*) |f| f else 0,
                             note.duration,
                             state.adsr.*,
                             state.volume.*,

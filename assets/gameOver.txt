@@ -1,10 +1,11 @@
 !tempo 112
 !time 4/4
 
-: Instrument short !mode 3 !r 2 ;
-: Instrument med   !mode 2 !r 4 ;
-: Instrument bass  !mode 1 !r F ;
-: Instrument kick  !r 4 ;
+: Instrument short !mode 3 ;
+: Instrument med   !mode 2 ;
+: Instrument bass  !mode 1 ;
+
+: Sfx kick !r 7 !freq 30 !glide 0 ;
 
 : Part a @p1 [ %short
 (mf) o4  c8 d g  c d g  c d  | > a b < d  > a b < d  > a b |
@@ -14,15 +15,12 @@
 : Part a @p2 [ %bass
     (mf) o3  c2 g | > a < d |
              c2 g | > a < d |
-    !goto a
 ] ;
 
 : Part b @p1 [ %med
     (mf) o4  c8 d g  c d g  c d  | > a b < d  > a b < d  > a b |
-    !goto a
 ] ;
 
-: Part drumloop @noise [
-    %kick (p) o4 a16 r r a r a r r a r r r r a r r |
-    !goto drumloop
-] ;
+: Part drumloop @noise [[
+    %kick (f) o4 a16 r r a r a r r a r r r r a r r |
+]] ;
