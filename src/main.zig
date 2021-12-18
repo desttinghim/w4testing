@@ -13,7 +13,7 @@ export fn start() void {
 export fn update() void {
     if (errOpt) |errmsg| {
         w4.text(errmsg.ptr, 0, 0);
-        w4.trace(errmsg.ptr);
+        @panic(errmsg);
     } else {
         game.update() catch |e| err(e);
     }
