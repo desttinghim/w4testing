@@ -1,52 +1,32 @@
-# W4 Testbed
+# W4 Platformer
 
-This is intended to be a platformer at some point but right now it's the snake
-game tutorial with some changes. Specifically:
+This will be a platformer for the WASM4 platform. From a flavor perspective I'm
+thinking of occult fantasy. My personal goals for the project are:
 
-* Written in Zig
-* Sound effects (2 of them!)
-* Build file to automate calling `w4` (although it seems to have broken)
-* Parses alda-like sound language at comptime to generate music system
-  "bytecode" 
+- Create an original and appealing soundtrack
+  - Learn how to compose music by "stealing like an artist"
+- Create appealing visuals
+- Create a compelling gameplay loop, even if it's not particularily interesting
+  or original.
+- Explore what tools are useful game development 
   
-## Sound Language
+## WAE/WAEL
 
-This is probably the coolest part of this project.
+WAE (Wasm Audio Engine) and WAEL (WAE Language) are the custom audio backend I
+am experimentally writing for this project. It is based on Alda, Lilypond, and
+Pently primarily. The goal is to make adding audio to my game easy and without
+forcing a dependency on any composition tools. Also, I want to be able to work
+primarily with my keyboard - moving my hand between my keyboard and the mouse is
+annoying when I'm trying to be in the flow of creating.
 
-``` alda
-!tempo 112
-!time 4/4
-!instrument pulse50
-o3 (mp)
-c16 d e f g
-```
-
-The above code is parsed at comptime and generates an event list. This event
-list acts like byte code for the music VM in `music.zig`, which decodes the 
-generated list and plays back the audio. Here's twinkle twinkle little star in
-the language:
-
-``` alda
-!tempo 112
-!time 4/4
-!instrument pulse50
-o3
-(mp) c4 c g g | a a g2 | f4 f e e | d d c2
-g4 g f f | e e d2 | g4 g f f | e e d2
-c4 c g g | a a g2 | f4 f e e | d d c2
-```
-
-To parse it I just call `alda.parseAlda(MAX_EVENTS, aldaStr)` and pass the result
-to `music.playSong`.
-
-## WAEL and WAE Design Thoughts
+### Design Thoughts
 
 WAE uses SFX, Instruments, Parts, and Arrangements to playback music and sound
 effects. 
 
 WAEL is parsed into WAE data to be used at runtime.
 
-### SFX
+#### SFX
 - Allows runtime parameters
 - Sub-types: relative pitch, absolute pitch 
 - Timing based on frames
@@ -59,7 +39,7 @@ sound will be played back relative to the supplied pitch;
 
 When using absolute pitch, the frequencies of the sounds are predefined.
 
-### Instrument
+#### Instrument
 - Sub-types: pitched, unpitched
 
 Defines how WAEL will parse a section of music. 
@@ -68,22 +48,9 @@ An unpitched instrument defines a list of SFX that can be used as a drumkit.
 
 A pitched instrument defines parameters to use when playing back each note. 
 
-### Parts
+#### Parts
 
 Defines a sequence of notes. The sound is defined by the supplied instrument.
 
-### Arrangements
+#### Song
 Defines how parts will be played and how they loop
-
-
-## TODO
-
-- [ ] Make WAE more music aware (use note durations instead of frames, etc.)
-- [ ] Make SFX type
-	- [ ] Absolute pitch
-	- [ ] Relative pitch
-- [ ] Use SFX for drumkit
-- [ ] Use SFX for in game sound effects
-- [ ] Add legato notes
-- [ ] Add glides between notes
-- [ ]
