@@ -3,18 +3,17 @@
 
 # gameOver
 
-: Instrument short !mode 3 ;
-: Instrument med   !mode 2 ;
-: Instrument bass  !mode 1 ;
+: Instrument short !mode 3 !r 2 ;
+: Instrument med   !mode 2 !r 4 ;
+: Instrument bass  !r F ;
 
 : Sfx kick !r 7 !freq 30 !glide 0 ;
 
 : Part melodyA @p1 [ %short
 (mf) o4  c8 d g  c d g  c d  | > a b < d  > a b < d  > a b |
-         c8 d g  c d g  c d  | > a b < d  > a b < d  > a b |
 ] ;
 
-: Part bassA @p2 [ %bass
+: Part bassA @tri [ %bass
     (mf) o3  c2 g | > a < d |
              c2 g | > a < d |
 ] ;
@@ -29,7 +28,7 @@
 
 : Song gameOver
   play @p1 melodyA
-  play @p2 bassA
+  play @tri bassA
   play @noise drumloop
 
   at 4
@@ -52,4 +51,16 @@
     c16 d c8 > b < c  |
 ] ;
 
+: Part getFruit2 @p1 [ %basic
+  (mf) o3
+  c16 d e8 f g
+] ;
+
+: Part getFruit3 @p1 [ %basic
+  (mf) o3
+  g16 f e8 d c
+] ;
+
 : Song getFruit   play @p1 getFruit   at 1 ;
+: Song getFruit2  play @p1 getFruit2  at 1 ;
+: Song getFruit3  play @p1 getFruit3  at 1 ;

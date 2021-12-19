@@ -174,7 +174,7 @@ const SymbolList = BoundedArray(Symbol, 64);
 /// to make variations that work in different environments.
 /// TODO: Make it work at runtime
 pub fn parse(buf: []const u8) !Context {
-    @setEvalBranchQuota(20000);
+    @setEvalBranchQuota(40000);
     var song = try Context.init();
 
     var currentOctave: u8 = 3;

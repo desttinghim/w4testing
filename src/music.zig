@@ -92,6 +92,8 @@ pub const WAE = struct {
     context: Context,
     /// Index of the current song
     song: ?u16 = null,
+    /// Index of the next song to play
+    nextSong: ?u16 = null,
     /// Index into current song
     contextCursor: u16 = 0,
     /// Next frame to update contextCursor
@@ -146,6 +148,14 @@ pub const WAE = struct {
         this.song = song;
     }
 
+    pub fn setNextSong(this: *@This(), song: u16) void {
+        if (this.song == null) {
+            this.playSong(song);
+            return;
+        }
+        this.nextSong = song;
+    }
+
     const ChannelState = struct {
         begin: *u32,
         next: *u32,
@@ -183,6 +193,14 @@ pub const WAE = struct {
                 .wait => |w| this.contextNext = this.counter + w,
                 .goto => |a| this.contextCursor = a,
                 .end => {
+                    if (this.nextSong) |next| {
+                        this.song = next;
+                        this.nextSong = null;
+                        song = this.context.songs.slice()[next].slice();
+                        this.contextCursor = 0;
+                        event = song[this.contextCursor];
+                        continue;
+                    }
                     this.song = null;
                     return false;
                 },

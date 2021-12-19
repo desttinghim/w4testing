@@ -14,10 +14,20 @@ var wae: WAE = undefined;
 const songs = std.ComptimeStringMap(u16, .{
     .{ "gameOver", 0 },
     .{ "getFruit", 1 },
+    .{ "getFruit2", 2 },
 });
+const getFruit = [_]u16{ 1, 2, 3 };
+var getFruitNum: u16 = 0;
 
 fn playSong(str: []const u8) void {
-    if (songs.get(str)) |index| wae.playSong(index);
+    if (songs.get(str)) |index| {
+        if (index == 1) {
+            wae.setNextSong(getFruit[getFruitNum]);
+            getFruitNum = (getFruitNum + 1) % @intCast(u16, getFruit.len);
+            return;
+        }
+        wae.playSong(index);
+    }
 }
 
 var snake = Snake.new() catch @panic("");
