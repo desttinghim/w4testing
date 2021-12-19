@@ -184,7 +184,7 @@ pub const WAE = struct {
                 .goto => |a| this.contextCursor = a,
                 .end => {
                     this.song = null;
-                    break;
+                    return false;
                 },
             }
             if (event != .goto) this.contextCursor += 1;

@@ -269,14 +269,11 @@ pub fn parse(buf: []const u8) !Context {
 
                                 try s.append(ControlEvent.init_play(channel, part));
                             } else if (std.mem.eql(u8, tok, "at")) {
-                                const Where = enum(u8) { begin = 0, end = 1 };
-                                const whereTok = tokIter.next() orelse return error.UnexpectedEOF;
                                 const barNumberTok = tokIter.next() orelse return error.UnexpectedEOF;
 
-                                const where = std.meta.stringToEnum(Where, whereTok) orelse return error.InvalidWhere;
-                                const bars = (try std.fmt.parseInt(u16, barNumberTok, 10)) + @enumToInt(where);
+                                const bars = try std.fmt.parseInt(u16, barNumberTok, 10);
 
-                                try s.append(ControlEvent{ .wait = @intCast(u16, time.getTicks(1) * bars) });
+                                try s.append(ControlEvent{ .wait = @intCast(u16, time.bar * bars) });
                             } else if (std.mem.eql(u8, tok, "dalSegno")) {
                                 try s.append(ControlEvent{ .goto = 0 });
                             } else return error.InvalidSongCommand;
