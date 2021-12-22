@@ -30,9 +30,9 @@
   play @p2 bassA
   play @noise drumloop
 
-  at end 4
+  at 4
   play @p1 melodyB
 
-  at end 6
+  at 6
   dalSegno
 ;

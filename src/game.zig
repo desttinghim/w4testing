@@ -15,6 +15,7 @@ const songs = std.ComptimeStringMap(u16, .{
     .{ "gameOver", 0 },
     .{ "getFruit", 1 },
     .{ "getFruit2", 2 },
+    .{ "spooky", 4 },
 });
 const getFruit = [_]u16{ 1, 2, 3 };
 var getFruitNum: u16 = 0;
@@ -55,6 +56,7 @@ pub fn start() !void {
     try snake.body.append(Point.new(1, 0));
     musicContext = comptime try wael.parse(@embedFile("../assets/music.txt"));
     wae = WAE.init(musicContext);
+    playSong("spooky");
 }
 
 const tilemap = [100]u8{

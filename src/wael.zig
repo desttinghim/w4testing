@@ -49,6 +49,10 @@ const Time = struct {
         return self;
     }
 
+    pub fn reset(this: *@This()) void {
+        this.currentTick = 0;
+    }
+
     /// Appease the timing god by calling this with the proper duration
     pub fn tick(this: *@This(), duration: u32) u32 {
         var ret: u32 = 0;
@@ -216,6 +220,7 @@ pub fn parse(buf: []const u8) !Context {
                                     parts.set(symbol.index, part);
                                 },
                                 '[' => {
+                                    time.reset();
                                     // Place goto command in event list w/ temporary value
                                     var position = @intCast(u16, song.events.len);
                                     part.address = position;
@@ -367,7 +372,14 @@ pub fn parse(buf: []const u8) !Context {
                             }
                         },
                         '|' => {
-                            if (!time.barCheck()) return error.BarCheckFailed else continue;
+                            if (!time.barCheck()) {
+                                std.log.warn("{} % {} = {}", .{
+                                    time.currentTick,
+                                    time.bar,
+                                    time.currentTick % time.bar,
+                                });
+                                return error.BarCheckFailed;
+                            } else continue;
                         },
                         // octave up
                         '>' => currentOctave = std.math.sub(u8, currentOctave, 1) catch return error.OctaveTooLow,

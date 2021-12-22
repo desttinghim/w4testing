@@ -64,3 +64,24 @@
 : Song getFruit   play @p1 getFruit   at 1 ;
 : Song getFruit2  play @p1 getFruit2  at 1 ;
 : Song getFruit3  play @p1 getFruit3  at 1 ;
+
+
+# I'm going to try to base this off the sound of the GM SoundFont Square lead
+# I have no idea what parameters are being used there, so I'm just putting stuff
+# down here until I research it.
+: Instrument squareLead !mode 2 !a 4 !d 2 !r 2 ;
+
+!tempo 224
+!time 4/4
+: Part spooky1 @p1 [
+  %squareLead (mp) o4
+  b8 < d f+ f+ > a+ < d f+ f+  | > a < c+ e e d+2     |
+  > g8 b < d d > f+ a+ < c+ c+ | > f+ < c+ > a+ a+ b2 |
+] ;
+
+: Part spooky2 @p1 [
+  %squareLead (mp) o4
+  b8 b < d+ f+ a2 | g4 f+ g e |
+] ;
+
+: Song spooky play @p1 spooky1 at 4  play @p1 spooky2 at 6 dalSegno ;
