@@ -56,7 +56,6 @@ pub fn start() !void {
     try snake.body.append(Point.new(1, 0));
     musicContext = comptime try wael.parse(@embedFile("../assets/music.txt"));
     wae = WAE.init(musicContext);
-    playSong("spooky");
 }
 
 const tilemap = [100]u8{

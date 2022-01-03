@@ -8,5 +8,5 @@ pub fn trace(comptime fmt: []const u8, args: anytype) void {
         fmt,
         args,
     ) catch return;
-    w4.trace(print.ptr);
+    w4.trace(print);
 }
