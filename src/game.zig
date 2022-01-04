@@ -2,8 +2,8 @@ const std = @import("std");
 const assets = @import("assets");
 
 const w4 = @import("wasm4.zig");
+const util = @import("util.zig");
 const palettes = @import("palettes.zig");
-const Point = @import("point.zig").Point;
 const music = @import("music.zig");
 const WAE = music.WAE;
 const wael = @import("wael.zig");
@@ -15,11 +15,101 @@ var frameCount: u32 = 0;
 var prng = std.rand.DefaultPrng.init(0);
 var random: std.rand.Random = undefined;
 
-const fruitSprite = [16]u8{ 0x00, 0xa0, 0x02, 0x00, 0x0e, 0xf0, 0x36, 0x5c, 0xd6, 0x57, 0xd5, 0x57, 0x35, 0x5c, 0x0f, 0xf0 };
+const Point = struct {
+    x: i32,
+    y: i32,
 
-// Public functions
+    pub fn eq(this: @This(), other: @This()) bool {
+        return this.x == other.x and this.y == other.y;
+    }
+
+    pub fn new(x: i32, y: i32) @This() {
+        return @This(){ .x = x, .y = y };
+    }
+};
+
+const Spr = struct {
+    id: u8,
+    col: [3]u3,
+    pub inline fn toDrawColor(spr: @This()) u16 {
+        return @as(u16, spr.col[0]) << 8 | @as(u16, spr.col[1]) << 4 | @as(u16, spr.col[2]);
+    }
+};
+
+const CompTag = enum {
+    Pos,
+    Vel,
+    Spr,
+};
+
+const Comp = union(CompTag) {
+    Pos: Point,
+    Vel: Point,
+    Spr: Spr,
+};
+
+const Query = std.EnumSet(CompTag);
+
+const World = struct {
+    const max = 20;
+
+    // Components
+    pos: [max]?Point = undefined,
+    vel: [max]?Point = undefined,
+    spr: [max]?Spr = undefined,
+
+    count: u32 = 0,
+
+    pub fn init() @This() {
+        return @This(){};
+    }
+
+    pub fn create(this: *@This()) u32 {
+        var ret = this.count;
+        this.count += 1;
+        return ret;
+    }
+
+    pub fn add(this: *@This(), entity: u32, comp: Comp) void {
+        switch (comp) {
+            .Pos => |pos| this.pos[entity] = pos,
+            .Vel => |vel| this.vel[entity] = vel,
+            .Spr => |spr| this.spr[entity] = spr,
+        }
+    }
+
+    pub fn get(this: *@This(), entity: u32, comp: CompTag) Comp {
+        return switch (comp) {
+            .Pos => Comp{ .Pos = this.pos[entity].? },
+            .Vel => Comp{ .Vel = this.vel[entity].? },
+            .Spr => Comp{ .Spr = this.spr[entity].? },
+        };
+    }
+
+    pub fn process(this: *@This(), required: Query, func: fn (world: *@This(), entity: u32) void) void {
+        var i: u32 = 0;
+        while (i < this.count) : (i += 1) {
+            const posCheck = !required.contains(.Pos) or (required.contains(.Pos) and this.pos[i] != null);
+            const velCheck = !required.contains(.Vel) or (required.contains(.Vel) and this.vel[i] != null);
+            const sprCheck = !required.contains(.Spr) or (required.contains(.Spr) and this.pos[i] != null);
+            if (posCheck and velCheck and sprCheck) {
+                func(this, i);
+            }
+        }
+    }
+};
+
+var _world = World.init();
 
 pub fn start() !void {
+    var e = _world.create();
+    var pos = Point.new(0, 0);
+    _world.add(e, Comp{ .Pos = pos });
+    var spr = Spr{ .id = 90, .col = .{ 0, 1, 4 } };
+    _world.add(e, Comp{ .Spr = spr });
+
+    util.trace("{} {x}", .{ spr.id, spr.toDrawColor() });
+
     random = prng.random();
     frameCount = 0;
     w4.PALETTE.* = palettes.en4;
@@ -62,5 +152,22 @@ pub fn update() !void {
         w4.blitSub(&assets.tileset, 144, 112, 16, 16, sx, sy + 16, assets.tilesetWidth, assets.tilesetFlags);
     }
 
+    var query = Query.initFull();
+    query.toggleAll();
+    query.insert(.Pos);
+    query.insert(.Spr);
+    _world.process(query, drawProcess);
+
     wae.update();
+}
+
+fn drawProcess(world: *World, e: u32) void {
+    const pos = world.get(e, .Pos).Pos;
+    const spr = world.get(e, .Spr).Spr;
+
+    const sx = (spr.id % 10) * 16;
+    const sy = (spr.id / 10) * 16;
+
+    w4.DRAW_COLORS.* = spr.toDrawColor();
+    w4.blitSub(&assets.tileset, pos.x, pos.y, 16, 16, sx, sy, assets.tilesetWidth, assets.tilesetFlags);
 }
