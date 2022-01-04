@@ -70,7 +70,7 @@ const World = struct {
         return ret;
     }
 
-    pub fn add(this: *@This(), entity: u32, comp: Comp) void {
+    pub fn set(this: *@This(), entity: u32, comp: Comp) void {
         switch (comp) {
             .Pos => |pos| this.pos[entity] = pos,
             .Vel => |vel| this.vel[entity] = vel,
@@ -84,6 +84,14 @@ const World = struct {
             .Vel => Comp{ .Vel = this.vel[entity].? },
             .Spr => Comp{ .Spr = this.spr[entity].? },
         };
+    }
+
+    fn query(_: *@This(), comps: []const CompTag) Query {
+        var q = Query.init(.{});
+        for (comps) |comp| {
+            q.insert(comp);
+        }
+        return q;
     }
 
     pub fn process(this: *@This(), required: Query, func: fn (world: *@This(), entity: u32) void) void {
@@ -104,9 +112,11 @@ var _world = World.init();
 pub fn start() !void {
     var e = _world.create();
     var pos = Point.new(0, 0);
-    _world.add(e, Comp{ .Pos = pos });
-    var spr = Spr{ .id = 90, .col = .{ 0, 1, 4 } };
-    _world.add(e, Comp{ .Spr = spr });
+    _world.set(e, Comp{ .Pos = pos });
+    var spr = Spr{ .id = 90, .col = .{ 0, 0, 4 } };
+    _world.set(e, Comp{ .Spr = spr });
+    var vel = Point.new(1, 1);
+    _world.set(e, Comp{ .Vel = vel });
 
     util.trace("{} {x}", .{ spr.id, spr.toDrawColor() });
 
@@ -152,11 +162,8 @@ pub fn update() !void {
         w4.blitSub(&assets.tileset, 144, 112, 16, 16, sx, sy + 16, assets.tilesetWidth, assets.tilesetFlags);
     }
 
-    var query = Query.initFull();
-    query.toggleAll();
-    query.insert(.Pos);
-    query.insert(.Spr);
-    _world.process(query, drawProcess);
+    _world.process(_world.query(&.{ .Pos, .Spr }), drawProcess);
+    _world.process(_world.query(&.{ .Pos, .Vel }), moveProcess);
 
     wae.update();
 }
@@ -170,4 +177,14 @@ fn drawProcess(world: *World, e: u32) void {
 
     w4.DRAW_COLORS.* = spr.toDrawColor();
     w4.blitSub(&assets.tileset, pos.x, pos.y, 16, 16, sx, sy, assets.tilesetWidth, assets.tilesetFlags);
+}
+
+fn moveProcess(world: *World, e: u32) void {
+    var pos = world.get(e, .Pos).Pos;
+    const vel = world.get(e, .Vel).Vel;
+
+    pos.x = @mod(pos.x + vel.x, 160);
+    pos.y = @mod(pos.y + vel.y, 160);
+
+    world.set(e, .{ .Pos = pos });
 }
