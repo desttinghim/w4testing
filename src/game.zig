@@ -15,7 +15,7 @@ var frameCount: u32 = 0;
 var prng = std.rand.DefaultPrng.init(0);
 var random: std.rand.Random = undefined;
 
-const Point = struct {
+const Vec = struct {
     x: i32,
     y: i32,
 
@@ -23,7 +23,7 @@ const Point = struct {
         return this.x == other.x and this.y == other.y;
     }
 
-    pub fn new(x: i32, y: i32) @This() {
+    pub fn init(x: i32, y: i32) @This() {
         return @This(){ .x = x, .y = y };
     }
 };
@@ -36,89 +36,70 @@ const Spr = struct {
     }
 };
 
-const CompTag = enum {
-    Pos,
-    Vel,
-    Spr,
+const Entity = struct {
+    pos: ?Vec = null,
+    vel: ?Vec = null,
+    spr: ?Spr = null,
 };
-
-const Comp = union(CompTag) {
-    Pos: Point,
-    Vel: Point,
-    Spr: Spr,
-};
-
-const Query = std.EnumSet(CompTag);
 
 const World = struct {
-    const max = 20;
+    entities: EntityPool,
 
-    // Components
-    pos: [max]?Point = undefined,
-    vel: [max]?Point = undefined,
-    spr: [max]?Spr = undefined,
+    const EntityPool = std.BoundedArray(Entity, 100);
+    const EntityEnum = std.meta.FieldEnum(Entity);
+    const EntitySet = std.EnumSet(EntityEnum);
+    const EntityQuery = struct {
+        required: std.EnumSet(EntityEnum),
+    };
 
-    count: u32 = 0,
+    const fields = std.meta.fields(Entity);
 
     pub fn init() @This() {
-        return @This(){};
-    }
-
-    pub fn create(this: *@This()) u32 {
-        var ret = this.count;
-        this.count += 1;
-        return ret;
-    }
-
-    pub fn set(this: *@This(), entity: u32, comp: Comp) void {
-        switch (comp) {
-            .Pos => |pos| this.pos[entity] = pos,
-            .Vel => |vel| this.vel[entity] = vel,
-            .Spr => |spr| this.spr[entity] = spr,
-        }
-    }
-
-    pub fn get(this: *@This(), entity: u32, comp: CompTag) Comp {
-        return switch (comp) {
-            .Pos => Comp{ .Pos = this.pos[entity].? },
-            .Vel => Comp{ .Vel = this.vel[entity].? },
-            .Spr => Comp{ .Spr = this.spr[entity].? },
+        return @This(){
+            .entities = EntityPool.init(0) catch unreachable,
         };
     }
 
-    fn query(_: *@This(), comps: []const CompTag) Query {
-        var q = Query.init(.{});
-        for (comps) |comp| {
-            q.insert(comp);
-        }
-        return q;
+    pub fn create(this: *@This(), entity: Entity) u32 {
+        this.entities.append(entity) catch unreachable;
+        return this.entities.len;
     }
 
-    pub fn process(this: *@This(), required: Query, func: fn (world: *@This(), entity: u32) void) void {
-        var i: u32 = 0;
-        while (i < this.count) : (i += 1) {
-            const posCheck = !required.contains(.Pos) or (required.contains(.Pos) and this.pos[i] != null);
-            const velCheck = !required.contains(.Vel) or (required.contains(.Vel) and this.vel[i] != null);
-            const sprCheck = !required.contains(.Spr) or (required.contains(.Spr) and this.pos[i] != null);
-            if (posCheck and velCheck and sprCheck) {
-                func(this, i);
+    // pub fn destroy(this: *@This(), entity: u32) void {
+    //     // TODO
+    // }
+
+    pub fn query(require: []const EntityEnum) EntityQuery {
+        var q = EntitySet.init(.{});
+        for (require) |f| {
+            q.insert(f);
+        }
+        return EntityQuery{ .required = q };
+    }
+
+    pub fn process(this: *@This(), q: *EntityQuery, func: fn (e: *Entity) void) void {
+        for (this.entities.slice()) |*e| {
+            var matches = true;
+            inline for (fields) |f| {
+                const fenum = std.meta.stringToEnum(EntityEnum, f.name) orelse unreachable;
+                const required = q.required.contains(fenum);
+                const has = @field(e, f.name) != null;
+                if (required and !has) matches = false;
+                break;
             }
+            if (matches) func(e);
         }
     }
 };
 
-var _world = World.init();
+var world = World.init();
 
 pub fn start() !void {
-    var e = _world.create();
-    var pos = Point.new(0, 0);
-    _world.set(e, Comp{ .Pos = pos });
-    var spr = Spr{ .id = 90, .col = .{ 0, 0, 4 } };
-    _world.set(e, Comp{ .Spr = spr });
-    var vel = Point.new(1, 1);
-    _world.set(e, Comp{ .Vel = vel });
-
-    util.trace("{} {x}", .{ spr.id, spr.toDrawColor() });
+    _ = world.create(.{
+        .pos = Vec.init(10, 10),
+        .spr = .{ .id = 90, .col = .{ 0, 1, 4 } },
+        .vel = Vec.init(1, 1),
+    });
 
     random = prng.random();
     frameCount = 0;
@@ -162,15 +143,17 @@ pub fn update() !void {
         w4.blitSub(&assets.tileset, 144, 112, 16, 16, sx, sy + 16, assets.tilesetWidth, assets.tilesetFlags);
     }
 
-    _world.process(_world.query(&.{ .Pos, .Spr }), drawProcess);
-    _world.process(_world.query(&.{ .Pos, .Vel }), moveProcess);
+    var physicsQuery = World.query(&.{ .pos, .vel });
+    world.process(&physicsQuery, moveProcess);
+    var drawQuery = World.query(&.{ .pos, .spr });
+    world.process(&drawQuery, drawProcess);
 
     wae.update();
 }
 
-fn drawProcess(world: *World, e: u32) void {
-    const pos = world.get(e, .Pos).Pos;
-    const spr = world.get(e, .Spr).Spr;
+fn drawProcess(e: *Entity) void {
+    const pos = e.pos orelse unreachable;
+    const spr = e.spr orelse unreachable;
 
     const sx = (spr.id % 10) * 16;
     const sy = (spr.id / 10) * 16;
@@ -179,12 +162,12 @@ fn drawProcess(world: *World, e: u32) void {
     w4.blitSub(&assets.tileset, pos.x, pos.y, 16, 16, sx, sy, assets.tilesetWidth, assets.tilesetFlags);
 }
 
-fn moveProcess(world: *World, e: u32) void {
-    var pos = world.get(e, .Pos).Pos;
-    const vel = world.get(e, .Vel).Vel;
+fn moveProcess(e: *Entity) void {
+    var pos = e.pos orelse unreachable;
+    const vel = e.vel orelse unreachable;
 
     pos.x = @mod(pos.x + vel.x, 160);
     pos.y = @mod(pos.y + vel.y, 160);
 
-    world.set(e, .{ .Pos = pos });
+    e.pos = pos;
 }
