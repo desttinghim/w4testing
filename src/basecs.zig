@@ -127,15 +127,15 @@ fn ECS(comptime Components: type) type {
         }
 
         /// Takes an entity ID and a component struct and stores it
-        pub fn assign(this: *@This(), entity: EntityID, comptime component: ComponentEnum) !*ComponentUnion {
+        pub fn assign(this: *@This(), entity: EntityID, comptime tag: ComponentEnum, component: anytype) !void {
             const i = entity.getIndex();
             if (this.entities.get(i).id.id != entity.id)
                 return error.EntityRemoved;
 
-            const tag = std.enums.nameCast(ComponentEnum, @tagName(component));
+            const T =
+                this.entities.slice()[i].mask.insert(tag);
             var pool = this.components.get(tag) orelse return error.UninitializedComponentPool;
-            this.entities.slice()[i].mask.insert(tag);
-            return pool.get(i);
+            std.mem.copy(T, @ptrCast(T, pool.get(i)), component);
         }
 
         pub fn get(this: *@This(), entity: EntityID, comptime component: ComponentUnion) ?*component {
@@ -211,9 +211,6 @@ test "Entity" {
     var e = world.create();
     defer world.destroy(e);
 
-    (try world.assign(e, .pos)).* = .{ .pos = .{ .x = 10, .y = 10 } };
+    try world.assign(e, .{ .pos = .{ .x = 10, .y = 10 } });
     defer world.remove(e, .pos);
-
-    (try world.assign(e, .hp)).* = .{ .hp = 10 };
-    defer world.remove(e, .hp);
 }
