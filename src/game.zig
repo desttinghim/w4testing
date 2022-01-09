@@ -138,11 +138,29 @@ fn level_collide(rect: AABB) std.BoundedArray(AABB, 9) {
     while (i <= bot_right.x) : (i += 1) {
         var a: isize = top_left.y;
         while (a <= bot_right.y) : (a += 1) {
-            if (get_tile(i, a)) |tile| if (tile != 2) collisions.append(AABB.init(i * 16, a * 16, 16, 16)) catch unreachable;
+            var tile = get_tile(i, a);
+            if (tile == null or tile.? != 2) collisions.append(AABB.init(i * 16, a * 16, 16, 16)) catch unreachable;
         }
     }
 
     return collisions;
+}
+
+const Pad = enum(u8) {
+    LEFT = w4.BUTTON_LEFT,
+    RIGHT = w4.BUTTON_RIGHT,
+    UP = w4.BUTTON_UP,
+    DOWN = w4.BUTTON_DOWN,
+    ONE = w4.BUTTON_1,
+    TWO = w4.BUTTON_2,
+};
+
+inline fn btn(input: u8, pad: Pad) bool {
+    return (input & @enumToInt(pad) != 0);
+}
+
+inline fn btnp(input: u8, prev: u8, pad: Pad) bool {
+    return (input & (input ^ prev) & @enumToInt(pad) != 0);
 }
 
 /// System for controlling entities with physics
@@ -157,9 +175,17 @@ fn controllerProcess(posptr: *comp.Pos, controllerptr: *comp.Controller, kinemat
     };
     var pos = posptr.cur;
     var prev = controllerptr.prev;
-    if (input & w4.BUTTON_RIGHT != 0) pos.x += 1;
-    if (input & w4.BUTTON_LEFT != 0) pos.x -= 1;
-    if (input & w4.BUTTON_1 != 0 and prev & w4.BUTTON_1 == 0 and kinematicptr.onground) pos.y -= 8;
+    if (btn(input, .RIGHT)) pos.x += 1;
+    if (btn(input, .LEFT)) pos.x -= 1;
+    // Jump
+    if (kinematicptr.onground and !btn(prev, .ONE)) controllerptr.*.aircontrol = controllerptr.AirControl;
+    if (btnp(input, prev, .ONE) and kinematicptr.onground) {
+        pos.y -= 8;
+    }
+    if (!kinematicptr.onground and controllerptr.aircontrol > 0 and btn(input, .ONE)) {
+        pos.y -= 1;
+        controllerptr.*.aircontrol -= 1;
+    }
     posptr.*.cur = pos;
     controllerptr.prev = input;
 }

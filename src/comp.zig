@@ -31,6 +31,8 @@ pub const Spr = struct {
 const Player = enum { GAMEPAD1, GAMEPAD2, GAMEPAD3, GAMEPAD4 };
 pub const Controller = struct {
     prev: u8 = 0,
+    AirControl: u8 = 4,
+    aircontrol: u8 = 0,
     control: union(enum) { player: Player },
 
     pub fn player(p: Player) @This() {
