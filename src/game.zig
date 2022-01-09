@@ -99,7 +99,7 @@ pub fn update() !void {
     }
 
     var physicsQuery = World.Query.require(&.{ .pos, .vel });
-    world.process(&physicsQuery, moveProcess);
+    world.process(physicsQuery, moveProcess);
     var drawQuery = World.Query.require(&.{ .pos, .spr });
     // world.process(&drawQuery, drawProcess);
     var drawIter = world.iter(drawQuery);

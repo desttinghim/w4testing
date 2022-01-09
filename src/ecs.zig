@@ -54,19 +54,39 @@ pub fn World(comptime Component: type) type {
             };
         }
 
-        pub fn create(this: *@This(), component: Component) u32 {
+        pub fn create(this: *@This(), component: Component) usize {
             this.components.append(this.alloc, component) catch unreachable;
             return this.components.len;
         }
 
-        pub fn destroy(this: *@This(), component: u32) void {
+        pub fn destroy(this: *@This(), entity: usize) void {
             // TODO
             _ = this;
-            _ = component;
+            _ = entity;
+            @compileError("unimplemented");
+        }
+
+        pub fn get(this: *@This(), entity: usize, component: ComponentEnum) *Component {
+            return this.components.items(component)[entity];
+        }
+
+        pub fn process(this: *@This(), query: ComponentQuery, func: fn (e: *Component) void) void {
+            var i = this.iter(query);
+            while (i.next()) |e| {
+                func(e);
+            }
+        }
+
+        pub fn iterAll(this: *@This()) Iterator {
+            return Iterator.init(this, ComponentQuery{});
+        }
+
+        pub fn iter(this: *@This(), query: ComponentQuery) Iterator {
+            return Iterator.init(this, query);
         }
 
         const Self = @This();
-        const WorldIterator = struct {
+        const Iterator = struct {
             world: *Self,
             lastComponent: ?Component,
             index: usize,
@@ -104,33 +124,5 @@ pub fn World(comptime Component: type) type {
                 return &this.lastComponent.?;
             }
         };
-
-        pub fn iterAll(this: *@This()) WorldIterator {
-            return WorldIterator.init(this, ComponentQuery{});
-        }
-
-        pub fn iter(this: *@This(), query: ComponentQuery) WorldIterator {
-            return WorldIterator.init(this, query);
-        }
-
-        pub fn process(this: *@This(), q: *ComponentQuery, func: fn (e: *Component) void) void {
-            var s = this.components.slice();
-            var i: usize = 0;
-            while (i < s.len) : (i += 1) {
-                var e = this.components.get(i);
-                var matches = true;
-                inline for (fields) |f| {
-                    const fenum = std.meta.stringToEnum(ComponentEnum, f.name) orelse unreachable;
-                    const required = q.required.contains(fenum);
-                    const has = @field(e, f.name) != null;
-                    if (required and !has) matches = false;
-                    break;
-                }
-                if (matches) {
-                    func(&e);
-                    this.components.set(i, e);
-                }
-            }
-        }
     };
 }
