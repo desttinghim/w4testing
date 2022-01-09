@@ -98,8 +98,7 @@ pub fn update() !void {
         w4.blitSub(&assets.tileset, 144, 112, 16, 16, sx, sy + 16, assets.tilesetWidth, assets.tilesetFlags);
     }
 
-    var physicsQuery = World.Query.require(&.{ .pos, .vel });
-    world.process(physicsQuery, moveProcess);
+    world.process(&.{ .pos, .vel }, moveProcess);
     var drawQuery = World.Query.require(&.{ .pos, .spr });
     // world.process(&drawQuery, drawProcess);
     var drawIter = world.iter(drawQuery);
@@ -128,12 +127,9 @@ fn drawProcess(e: *Entity) void {
     w4.blitSub(&assets.tileset, pos.x, pos.y, 16, 16, sx, sy, assets.tilesetWidth, assets.tilesetFlags);
 }
 
-fn moveProcess(e: *Entity) void {
-    var pos = e.pos.?;
-    const vel = e.vel.?;
-
-    pos.x = @mod(pos.x + vel.x, 160);
-    pos.y = @mod(pos.y + vel.y, 160);
-
-    e.pos = pos;
+fn moveProcess(pos: *Vec, vel: *Vec) void {
+    pos.* = .{
+        .x = @mod(pos.*.x + vel.*.x, 160),
+        .y = @mod(pos.*.y + vel.*.y, 160),
+    };
 }

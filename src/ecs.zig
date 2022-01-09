@@ -1,4 +1,6 @@
 const std = @import("std");
+const ArgsTuple = std.meta.Tuple;
+const Tuple = std.meta.Tuple;
 
 pub fn World(comptime Component: type) type {
     return struct {
@@ -70,10 +72,24 @@ pub fn World(comptime Component: type) type {
             return this.components.items(component)[entity];
         }
 
-        pub fn process(this: *@This(), query: ComponentQuery, func: fn (e: *Component) void) void {
-            var i = this.iter(query);
+        fn enum2type(comptime enumList: []const ComponentEnum) []type {
+            var t: [enumList.len]type = undefined;
+            inline for (enumList) |e, i| {
+                const field_type = @typeInfo(fields[@enumToInt(e)].field_type);
+                t[i] = *field_type.Optional.child;
+            }
+            return &t;
+        }
+
+        pub fn process(this: *@This(), comptime comp: []const ComponentEnum, func: anytype) void {
+            const Args = Tuple(enum2type(comp));
+            var i = this.iter(Query.require(comp));
             while (i.next()) |e| {
-                func(e);
+                var args: Args = undefined;
+                inline for (comp) |f, j| {
+                    args[j] = &(@field(e, @tagName(f)).?);
+                }
+                @call(.{}, func, args);
             }
         }
 
