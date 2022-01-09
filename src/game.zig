@@ -25,6 +25,7 @@ const World = ecs.World(struct {
     pos: ?comp.Pos = null,
     kinematic: ?comp.Kinematic = null,
     spr: ?comp.Spr = null,
+    gravity: ?comp.Gravity = null,
 });
 var world = World.init(fba.allocator());
 
@@ -42,14 +43,13 @@ const level = [100]u8{
 };
 
 pub fn start() !void {
-    const pos = comp.Vec.init(10, 10);
-    const phy = .{ .last_pos = pos, .collider = comp.AABB.init(0, 0, 16, 16) };
-    util.trace("{}, {}", .{ pos, phy });
-    util.trace("{}", .{pos.sub(phy.last_pos)});
+    const pos = comp.Pos.init(10, 10);
+    const phy = .{ .collider = comp.AABB.init(0, 0, 16, 16) };
     _ = world.create(.{
         .pos = pos,
         .kinematic = phy,
         .spr = .{ .id = 90, .col = .{ 0, 1, 4 } },
+        .gravity = comp.Vec.init(0, 1),
     });
 
     random = prng.random();
@@ -62,7 +62,13 @@ pub fn start() !void {
 pub fn update() !void {
     frameCount += 1;
 
-    world.process(&.{ .pos, .kinematic }, physicsProcess);
+    // Process physics twice a frame
+    var i: usize = 0;
+    while (i < 2) : (i += 1) {
+        world.process(&.{.pos}, velocityProcess);
+        world.process(&.{ .pos, .gravity }, gravityProcess);
+        world.process(&.{ .pos, .kinematic }, collisionProcess);
+    }
 
     // Draw
     drawPreprocess();
@@ -93,8 +99,8 @@ fn drawPreprocess() void {
     draw_map(&level);
 }
 
-fn drawProcess(posptr: *comp.Vec, sprptr: *comp.Spr) void {
-    const pos = posptr.*;
+fn drawProcess(posptr: *comp.Pos, sprptr: *comp.Spr) void {
+    const pos = posptr.*.cur;
     const spr = sprptr.*;
 
     const sx = (spr.id % 10) * 16;
@@ -135,25 +141,37 @@ fn level_collide(rect: comp.AABB) std.BoundedArray(comp.AABB, 9) {
 
 const GRAVITY = 1;
 
-fn physicsProcess(posptr: *comp.Pos, kinematicptr: *comp.Kinematic) void {
-    const current = posptr.*;
+fn velocityProcess(posptr: *comp.Pos) void {
+    const cur = posptr.*.cur;
+    const old = posptr.*.old;
+    const vel = cur.sub(old);
+
+    const next = cur.add(vel);
+
+    posptr.*.cur = next;
+    posptr.*.old = cur;
+}
+
+fn gravityProcess(posptr: *comp.Pos, gravityptr: *comp.Gravity) void {
+    posptr.*.cur = posptr.*.cur.add(gravityptr.*);
+}
+
+fn collisionProcess(posptr: *comp.Pos, kinematicptr: *comp.Kinematic) void {
+    const pos = posptr.*.cur;
+    const old = posptr.*.old;
     const kinematic = kinematicptr.*;
-    var vel = current.sub(kinematic.last_pos);
-    vel.y += GRAVITY;
-    var next = current;
 
-    next.x += vel.x;
-    var collisions = level_collide(kinematic.collider.addV(next));
+    var next = comp.Vec.init(pos.x, old.y);
+    var collisions = level_collide(kinematic.collider.addV(pos));
     if (collisions.len > 0) {
-        next.x = current.x;
+        next.x = old.x;
     }
 
-    next.y += vel.y;
-    collisions = level_collide(kinematic.collider.addV(next));
+    next.y = pos.y;
+    collisions = level_collide(kinematic.collider.addV(pos));
     if (collisions.len > 0) {
-        next.y = current.y;
+        next.y = old.y;
     }
 
-    posptr.* = next;
-    kinematicptr.*.last_pos = current;
+    posptr.*.cur = next;
 }

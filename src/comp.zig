@@ -84,10 +84,18 @@ pub const AABB = struct {
     }
 };
 
-pub const Pos = Vec;
+pub const Pos = struct {
+    cur: Vec,
+    old: Vec,
+
+    pub fn init(x: i32, y: i32) @This() {
+        return @This(){ .cur = Vec.init(x, y), .old = Vec.init(x, y) };
+    }
+};
+
+pub const Gravity = Vec;
 
 pub const Kinematic = struct {
-    last_pos: Vec,
     collider: AABB,
 };
 
