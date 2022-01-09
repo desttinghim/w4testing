@@ -1,82 +1,126 @@
 const std = @import("std");
 
-pub fn World(comptime Entity: type) type {
+pub fn World(comptime Component: type) type {
     return struct {
-        entities: EntityPool,
+        components: ComponentPool,
         alloc: std.mem.Allocator,
+        pub const Query = ComponentQuery;
 
-        const EntityPool = std.MultiArrayList(Entity);
-        const EntityEnum = std.meta.FieldEnum(Entity);
-        const EntitySet = std.EnumSet(EntityEnum);
-        const EntityQuery = struct {
-            required: std.EnumSet(EntityEnum),
+        const ComponentPool = std.MultiArrayList(Component);
+        const ComponentEnum = std.meta.FieldEnum(Component);
+        const ComponentSet = std.EnumSet(ComponentEnum);
+        const ComponentQuery = struct {
+            required: ComponentSet = ComponentSet.init(.{}),
+            excluded: ComponentSet = ComponentSet.init(.{}),
+
+            pub fn init() @This() {
+                return @This(){};
+            }
+
+            pub fn query(require_set: []const ComponentEnum, exclude_set: []const ComponentEnum) @This() {
+                var this = @This(){};
+                for (require_set) |f| {
+                    this.required.insert(f);
+                }
+                for (exclude_set) |f| {
+                    this.excluded.insert(f);
+                }
+                return this;
+            }
+
+            pub fn require(set: []const ComponentEnum) @This() {
+                var this = @This(){};
+                for (set) |f| {
+                    this.required.insert(f);
+                }
+                return this;
+            }
+
+            pub fn exclude(set: []const ComponentEnum) @This() {
+                var this = @This(){};
+                for (set) |f| {
+                    this.excluded.insert(f);
+                }
+                return this;
+            }
         };
 
-        const fields = std.meta.fields(Entity);
+        const fields = std.meta.fields(Component);
 
         pub fn init(alloc: std.mem.Allocator) @This() {
             return @This(){
-                .entities = EntityPool{},
+                .components = ComponentPool{},
                 .alloc = alloc,
             };
         }
 
-        pub fn create(this: *@This(), entity: Entity) u32 {
-            this.entities.append(this.alloc, entity) catch unreachable;
-            return this.entities.len;
+        pub fn create(this: *@This(), component: Component) u32 {
+            this.components.append(this.alloc, component) catch unreachable;
+            return this.components.len;
         }
 
-        pub fn destroy(this: *@This(), entity: u32) void {
+        pub fn destroy(this: *@This(), component: u32) void {
             // TODO
             _ = this;
-            _ = entity;
+            _ = component;
         }
 
         const Self = @This();
         const WorldIterator = struct {
             world: *Self,
-            lastEntity: ?Entity,
+            lastComponent: ?Component,
             index: usize,
-            query: EntityQuery,
+            query: ComponentQuery,
 
-            pub fn init(w: *Self) @This() {
+            pub fn init(w: *Self, q: ComponentQuery) @This() {
                 return @This(){
                     .world = w,
-                    .lastEntity = null,
+                    .lastComponent = null,
                     .index = 0,
-                    .query = EntityQuery{ .required = EntitySet.init(.{}) },
+                    .query = q,
                 };
             }
 
-            pub fn next(this: *@This()) ?*Entity {
-                if (this.lastEntity) |e| this.world.entities.set(this.index - 1, e);
-                if (this.index == this.world.entities.len) return null;
-                this.lastEntity = this.world.entities.get(this.index);
-                this.index += 1;
-                return &this.lastEntity.?;
+            pub fn next(this: *@This()) ?*Component {
+                if (this.lastComponent) |e| this.world.components.set(this.index - 1, e);
+                if (this.index == this.world.components.len) return null;
+                var match = false;
+                while (!match) {
+                    if (this.index == this.world.components.len) return null;
+                    this.lastComponent = this.world.components.get(this.index);
+                    match = true;
+                    inline for (fields) |f| {
+                        const fenum = std.meta.stringToEnum(ComponentEnum, f.name) orelse unreachable;
+                        const required = this.query.required.contains(fenum);
+                        const excluded = this.query.excluded.contains(fenum);
+                        const has = @field(this.lastComponent.?, f.name) != null;
+                        if ((required and !has) or (excluded and has)) {
+                            match = false;
+                            break;
+                        }
+                    }
+                    this.index += 1;
+                }
+                return &this.lastComponent.?;
             }
         };
 
         pub fn iterAll(this: *@This()) WorldIterator {
-            return WorldIterator.init(this);
+            return WorldIterator.init(this, ComponentQuery{});
         }
 
-        pub fn query(require: []const EntityEnum) EntityQuery {
-            var q = EntitySet.init(.{});
-            for (require) |f| {
-                q.insert(f);
-            }
-            return EntityQuery{ .required = q };
+        pub fn iter(this: *@This(), query: ComponentQuery) WorldIterator {
+            return WorldIterator.init(this, query);
         }
 
-        pub fn process(this: *@This(), q: *EntityQuery, func: fn (e: *Entity) void) void {
-            var s = this.entities.slice();
+        pub fn process(this: *@This(), q: *ComponentQuery, func: fn (e: *Component) void) void {
+            var s = this.components.slice();
             var i: usize = 0;
             while (i < s.len) : (i += 1) {
-                var e = this.entities.get(i);
+                var e = this.components.get(i);
                 var matches = true;
                 inline for (fields) |f| {
-                    const fenum = std.meta.stringToEnum(EntityEnum, f.name) orelse unreachable;
+                    const fenum = std.meta.stringToEnum(ComponentEnum, f.name) orelse unreachable;
                     const required = q.required.contains(fenum);
                     const has = @field(e, f.name) != null;
                     if (required and !has) matches = false;
@@ -84,7 +128,7 @@ pub fn World(comptime Entity: type) type {
                 }
                 if (matches) {
                     func(&e);
-                    this.entities.set(i, e);
+                    this.components.set(i, e);
                 }
             }
         }

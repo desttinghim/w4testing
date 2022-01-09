@@ -98,11 +98,11 @@ pub fn update() !void {
         w4.blitSub(&assets.tileset, 144, 112, 16, 16, sx, sy + 16, assets.tilesetWidth, assets.tilesetFlags);
     }
 
-    var physicsQuery = World.query(&.{ .pos, .vel });
+    var physicsQuery = World.Query.require(&.{ .pos, .vel });
     world.process(&physicsQuery, moveProcess);
-    // var drawQuery = World.query(&.{ .pos, .spr });
+    var drawQuery = World.Query.require(&.{ .pos, .spr });
     // world.process(&drawQuery, drawProcess);
-    var drawIter = world.iterAll();
+    var drawIter = world.iter(drawQuery);
     while (drawIter.next()) |e| {
         const pos = e.pos.?;
         const spr = e.spr.?;
