@@ -44,8 +44,9 @@ const Entity = struct {
 
 const World = struct {
     entities: EntityPool,
+    alloc: std.mem.Allocator,
 
-    const EntityPool = std.BoundedArray(Entity, 100);
+    const EntityPool = std.MultiArrayList(Entity);
     const EntityEnum = std.meta.FieldEnum(Entity);
     const EntitySet = std.EnumSet(EntityEnum);
     const EntityQuery = struct {
@@ -54,20 +55,23 @@ const World = struct {
 
     const fields = std.meta.fields(Entity);
 
-    pub fn init() @This() {
+    pub fn init(alloc: std.mem.Allocator) @This() {
         return @This(){
-            .entities = EntityPool.init(0) catch unreachable,
+            .entities = EntityPool{},
+            .alloc = alloc,
         };
     }
 
     pub fn create(this: *@This(), entity: Entity) u32 {
-        this.entities.append(entity) catch unreachable;
+        this.entities.append(this.alloc, entity) catch unreachable;
         return this.entities.len;
     }
 
-    // pub fn destroy(this: *@This(), entity: u32) void {
-    //     // TODO
-    // }
+    pub fn destroy(this: *@This(), entity: u32) void {
+        // TODO
+        _ = this;
+        _ = entity;
+    }
 
     pub fn query(require: []const EntityEnum) EntityQuery {
         var q = EntitySet.init(.{});
@@ -78,7 +82,10 @@ const World = struct {
     }
 
     pub fn process(this: *@This(), q: *EntityQuery, func: fn (e: *Entity) void) void {
-        for (this.entities.slice()) |*e| {
+        var s = this.entities.slice();
+        var i: usize = 0;
+        while (i < s.len) : (i += 1) {
+            var e = this.entities.get(i);
             var matches = true;
             inline for (fields) |f| {
                 const fenum = std.meta.stringToEnum(EntityEnum, f.name) orelse unreachable;
@@ -87,12 +94,18 @@ const World = struct {
                 if (required and !has) matches = false;
                 break;
             }
-            if (matches) func(e);
+            if (matches) {
+                func(&e);
+                this.entities.set(i, e);
+            }
         }
     }
 };
 
-var world = World.init();
+const KB = 1024;
+var heap: [4 * KB]u8 = undefined;
+var fba = std.heap.FixedBufferAllocator.init(&heap);
+var world = World.init(fba.allocator());
 
 pub fn start() !void {
     _ = world.create(.{
@@ -152,8 +165,8 @@ pub fn update() !void {
 }
 
 fn drawProcess(e: *Entity) void {
-    const pos = e.pos orelse unreachable;
-    const spr = e.spr orelse unreachable;
+    const pos = e.pos.?;
+    const spr = e.spr.?;
 
     const sx = (spr.id % 10) * 16;
     const sy = (spr.id / 10) * 16;
@@ -163,8 +176,8 @@ fn drawProcess(e: *Entity) void {
 }
 
 fn moveProcess(e: *Entity) void {
-    var pos = e.pos orelse unreachable;
-    const vel = e.vel orelse unreachable;
+    var pos = e.pos.?;
+    const vel = e.vel.?;
 
     pos.x = @mod(pos.x + vel.x, 160);
     pos.y = @mod(pos.y + vel.y, 160);
