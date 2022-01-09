@@ -8,6 +8,7 @@ const music = @import("music.zig");
 const WAE = music.WAE;
 const wael = @import("wael.zig");
 const ecs = @import("ecs.zig");
+const comp = @import("comp.zig");
 
 var musicContext: music.Context = undefined;
 var wae: WAE = undefined;
@@ -16,44 +17,26 @@ var frameCount: u32 = 0;
 var prng = std.rand.DefaultPrng.init(0);
 var random: std.rand.Random = undefined;
 
-const Vec = struct {
-    x: i32,
-    y: i32,
-
-    pub fn eq(this: @This(), other: @This()) bool {
-        return this.x == other.x and this.y == other.y;
-    }
-
-    pub fn init(x: i32, y: i32) @This() {
-        return @This(){ .x = x, .y = y };
-    }
-};
-
-const Spr = struct {
-    id: u8,
-    col: [3]u3,
-    pub inline fn toDrawColor(spr: @This()) u16 {
-        return @as(u16, spr.col[0]) << 8 | @as(u16, spr.col[1]) << 4 | @as(u16, spr.col[2]);
-    }
-};
-
-const Entity = struct {
-    pos: ?Vec = null,
-    vel: ?Vec = null,
-    spr: ?Spr = null,
-};
-
 const KB = 1024;
 var heap: [4 * KB]u8 = undefined;
 var fba = std.heap.FixedBufferAllocator.init(&heap);
-const World = ecs.World(Entity);
+
+const World = ecs.World(struct {
+    pos: ?comp.Pos = null,
+    physics: ?comp.Physics = null,
+    spr: ?comp.Spr = null,
+});
 var world = World.init(fba.allocator());
 
 pub fn start() !void {
+    const pos = comp.Vec.init(10, 10);
+    const phy = .{ .last_pos = comp.Vec.init(10, 9) };
+    util.trace("{}, {}", .{ pos, phy });
+    util.trace("{}", .{pos.sub(phy.last_pos)});
     _ = world.create(.{
-        .pos = Vec.init(10, 10),
+        .pos = pos,
+        .physics = phy,
         .spr = .{ .id = 90, .col = .{ 0, 1, 4 } },
-        .vel = Vec.init(1, 1),
     });
 
     random = prng.random();
@@ -98,27 +81,15 @@ pub fn update() !void {
         w4.blitSub(&assets.tileset, 144, 112, 16, 16, sx, sy + 16, assets.tilesetWidth, assets.tilesetFlags);
     }
 
-    world.process(&.{ .pos, .vel }, moveProcess);
-    var drawQuery = World.Query.require(&.{ .pos, .spr });
-    // world.process(&drawQuery, drawProcess);
-    var drawIter = world.iter(drawQuery);
-    while (drawIter.next()) |e| {
-        const pos = e.pos.?;
-        const spr = e.spr.?;
-
-        const sx = (spr.id % 10) * 16;
-        const sy = (spr.id / 10) * 16;
-
-        w4.DRAW_COLORS.* = spr.toDrawColor();
-        w4.blitSub(&assets.tileset, pos.x, pos.y, 16, 16, sx, sy, assets.tilesetWidth, assets.tilesetFlags);
-    }
+    world.process(&.{ .pos, .physics }, moveProcess);
+    world.process(&.{ .pos, .spr }, drawProcess);
 
     wae.update();
 }
 
-fn drawProcess(e: *Entity) void {
-    const pos = e.pos.?;
-    const spr = e.spr.?;
+fn drawProcess(posptr: *comp.Vec, sprptr: *comp.Spr) void {
+    const pos = posptr.*;
+    const spr = sprptr.*;
 
     const sx = (spr.id % 10) * 16;
     const sy = (spr.id / 10) * 16;
@@ -127,9 +98,22 @@ fn drawProcess(e: *Entity) void {
     w4.blitSub(&assets.tileset, pos.x, pos.y, 16, 16, sx, sy, assets.tilesetWidth, assets.tilesetFlags);
 }
 
-fn moveProcess(pos: *Vec, vel: *Vec) void {
+fn abs(x: i32) i32 {
+    return std.math.absInt(x) catch unreachable;
+}
+
+fn moveProcess(pos: *comp.Pos, physics: *comp.Physics) void {
+    const last_pos = pos.*;
+    const vel = pos.*.sub(physics.*.last_pos);
+    var x = pos.*.x + vel.x;
+    var y = pos.*.y + vel.y;
+    if (x > 160) x = 160 - abs(vel.x);
+    if (x < 0) x = abs(vel.x);
+    if (y > 160) y = 160 - abs(vel.y);
+    if (y < 0) y = abs(vel.y);
     pos.* = .{
-        .x = @mod(pos.*.x + vel.*.x, 160),
-        .y = @mod(pos.*.y + vel.*.y, 160),
+        .x = x,
+        .y = y,
     };
+    physics.*.last_pos = last_pos;
 }
