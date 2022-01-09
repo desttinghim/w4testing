@@ -9,6 +9,8 @@ const WAE = music.WAE;
 const wael = @import("wael.zig");
 const ecs = @import("ecs.zig");
 const comp = @import("comp.zig");
+const Vec = util.Vec;
+const AABB = util.AABB;
 
 var musicContext: music.Context = undefined;
 var wae: WAE = undefined;
@@ -26,6 +28,7 @@ const World = ecs.World(struct {
     kinematic: ?comp.Kinematic = null,
     spr: ?comp.Spr = null,
     gravity: ?comp.Gravity = null,
+    controller: ?comp.Controller = null,
 });
 var world = World.init(fba.allocator());
 
@@ -37,19 +40,20 @@ const level = [100]u8{
     2,  2,  2,  2,  2,  2,  2,  2,  2,  2,
     2,  2,  2,  2,  2,  2,  2,  2,  2,  2,
     2,  2,  2,  2,  2,  2,  2,  2,  8,  9,
-    2,  2,  2,  2,  2,  2,  2,  2,  18, 19,
+    2,  1,  0,  1,  2,  2,  2,  2,  18, 19,
     0,  1,  0,  1,  0,  1,  0,  1,  0,  1,
     10, 11, 10, 11, 10, 11, 10, 11, 10, 11,
 };
 
 pub fn start() !void {
     const pos = comp.Pos.init(10, 10);
-    const phy = .{ .collider = comp.AABB.init(0, 0, 16, 16) };
+    const phy = .{ .collider = AABB.init(0, 0, 16, 16) };
     _ = world.create(.{
         .pos = pos,
         .kinematic = phy,
         .spr = .{ .id = 90, .col = .{ 0, 1, 4 } },
-        .gravity = comp.Vec.init(0, 1),
+        .gravity = Vec.init(0, 1),
+        .controller = comp.Controller.player(.GAMEPAD1),
     });
 
     random = prng.random();
@@ -67,6 +71,7 @@ pub fn update() !void {
     while (i < 2) : (i += 1) {
         world.process(&.{.pos}, velocityProcess);
         world.process(&.{ .pos, .gravity }, gravityProcess);
+        world.process(&.{ .pos, .controller, .kinematic }, controllerProcess);
         world.process(&.{ .pos, .kinematic }, collisionProcess);
     }
 
@@ -117,34 +122,54 @@ fn drawPostprocess() void {
 }
 
 /// pos should be in tile coordinates, not world coordinates
-fn get_tile(x: i32, y: i32) u8 {
+fn get_tile(x: i32, y: i32) ?u8 {
+    if (x < 0 or x > 9 or y < 0 or y > 9) return null;
     const i = x + y * 10;
     return level[@intCast(u32, i)];
 }
 
 /// rect should be absolutely positioned. Add pos to kinematic.collider
-fn level_collide(rect: comp.AABB) std.BoundedArray(comp.AABB, 9) {
+fn level_collide(rect: AABB) std.BoundedArray(AABB, 9) {
     const top_left = rect.pos.div(16);
     const bot_right = rect.pos.add(rect.size).div(16);
-    var collisions = std.BoundedArray(comp.AABB, 9).init(0) catch unreachable;
+    var collisions = std.BoundedArray(AABB, 9).init(0) catch unreachable;
 
     var i: isize = top_left.x;
     while (i <= bot_right.x) : (i += 1) {
         var a: isize = top_left.y;
         while (a <= bot_right.y) : (a += 1) {
-            if (get_tile(i, a) != 2) collisions.append(comp.AABB.init(i * 16, a * 16, 16, 16)) catch unreachable;
+            if (get_tile(i, a)) |tile| if (tile != 2) collisions.append(AABB.init(i * 16, a * 16, 16, 16)) catch unreachable;
         }
     }
 
     return collisions;
 }
 
-const GRAVITY = 1;
+/// System for controlling entities with physics
+fn controllerProcess(posptr: *comp.Pos, controllerptr: *comp.Controller, kinematicptr: *comp.Kinematic) void {
+    const input = switch (controllerptr.control) {
+        .player => |gamepad| switch (gamepad) {
+            .GAMEPAD1 => w4.GAMEPAD1.*,
+            .GAMEPAD2 => w4.GAMEPAD2.*,
+            .GAMEPAD3 => w4.GAMEPAD3.*,
+            .GAMEPAD4 => w4.GAMEPAD4.*,
+        },
+    };
+    var pos = posptr.cur;
+    var prev = controllerptr.prev;
+    if (input & w4.BUTTON_RIGHT != 0) pos.x += 1;
+    if (input & w4.BUTTON_LEFT != 0) pos.x -= 1;
+    if (input & w4.BUTTON_1 != 0 and prev & w4.BUTTON_1 == 0 and kinematicptr.onground) pos.y -= 8;
+    posptr.*.cur = pos;
+    controllerptr.prev = input;
+}
 
 fn velocityProcess(posptr: *comp.Pos) void {
     const cur = posptr.*.cur;
     const old = posptr.*.old;
-    const vel = cur.sub(old);
+    var vel = cur.sub(old);
+
+    vel.x = @divTrunc(vel.x, 2);
 
     const next = cur.add(vel);
 
@@ -161,16 +186,22 @@ fn collisionProcess(posptr: *comp.Pos, kinematicptr: *comp.Kinematic) void {
     const old = posptr.*.old;
     const kinematic = kinematicptr.*;
 
-    var next = comp.Vec.init(pos.x, old.y);
-    var collisions = level_collide(kinematic.collider.addV(pos));
+    var next = Vec.init(pos.x, old.y);
+    var collisions = level_collide(kinematic.collider.addV(next));
     if (collisions.len > 0) {
         next.x = old.x;
+        kinematicptr.*.onwall = true;
+    } else {
+        kinematicptr.*.onwall = false;
     }
 
     next.y = pos.y;
-    collisions = level_collide(kinematic.collider.addV(pos));
+    collisions = level_collide(kinematic.collider.addV(next));
     if (collisions.len > 0) {
         next.y = old.y;
+        kinematicptr.*.onground = true;
+    } else {
+        kinematicptr.*.onground = false;
     }
 
     posptr.*.cur = next;
