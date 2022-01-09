@@ -57,8 +57,9 @@ pub fn World(comptime Component: type) type {
         }
 
         pub fn create(this: *@This(), component: Component) usize {
+            const len = this.components.len;
             this.components.append(this.alloc, component) catch unreachable;
-            return this.components.len;
+            return len;
         }
 
         pub fn destroy(this: *@This(), entity: usize) void {

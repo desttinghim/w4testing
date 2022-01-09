@@ -28,9 +28,22 @@ const World = ecs.World(struct {
 });
 var world = World.init(fba.allocator());
 
+const level = [100]u8{
+    2,  2,  2,  2,  2,  2,  2,  2,  2,  2,
+    2,  2,  2,  2,  2,  2,  2,  2,  2,  2,
+    2,  2,  2,  2,  2,  2,  2,  2,  2,  2,
+    2,  2,  2,  2,  2,  2,  2,  2,  2,  2,
+    2,  2,  2,  2,  2,  2,  2,  2,  2,  2,
+    2,  2,  2,  2,  2,  2,  2,  2,  2,  2,
+    2,  2,  2,  2,  2,  2,  2,  2,  8,  9,
+    2,  2,  2,  2,  2,  2,  2,  2,  18, 19,
+    0,  1,  0,  1,  0,  1,  0,  1,  0,  1,
+    10, 11, 10, 11, 10, 11, 10, 11, 10, 11,
+};
+
 pub fn start() !void {
     const pos = comp.Vec.init(10, 10);
-    const phy = .{ .last_pos = comp.Vec.init(10, 9) };
+    const phy = .{ .last_pos = comp.Vec.init(7, 8) };
     util.trace("{}, {}", .{ pos, phy });
     util.trace("{}", .{pos.sub(phy.last_pos)});
     _ = world.create(.{
@@ -46,45 +59,37 @@ pub fn start() !void {
     wae = WAE.init(musicContext);
 }
 
-const tilemap = [100]u8{
-    2,  2,  2,  2,  2,  2,  2,  2,  2,  2,
-    2,  2,  2,  2,  2,  2,  2,  2,  2,  2,
-    2,  2,  2,  2,  2,  2,  2,  2,  2,  2,
-    2,  2,  2,  2,  2,  2,  2,  2,  2,  2,
-    2,  2,  2,  2,  2,  2,  2,  2,  2,  2,
-    2,  2,  2,  2,  2,  2,  2,  2,  2,  2,
-    2,  2,  2,  2,  2,  2,  2,  2,  8,  9,
-    2,  2,  2,  2,  2,  2,  2,  2,  18, 19,
-    0,  1,  0,  1,  0,  1,  0,  1,  0,  1,
-    10, 11, 10, 11, 10, 11, 10, 11, 10, 11,
-};
-
 pub fn update() !void {
     frameCount += 1;
 
-    w4.DRAW_COLORS.* = 0x0014;
-    for (tilemap) |tile, index| {
-        var i = @intCast(u8, index);
-        var x = (i % 10) * 16;
-        var y = (i / 10) * 16;
-        var sx = (tile % 10) * 16;
-        var sy = (tile / 10) * 16;
-        w4.blitSub(&assets.tileset, x, y, 16, 16, sx, sy, assets.tilesetWidth, assets.tilesetFlags);
-    }
+    draw_map(&level);
     defer {
         w4.DRAW_COLORS.* = 0x0014;
         // Draw these items over everything else
-        var tile: u8 = 9;
-        var sx = (tile % 10) * 16;
-        var sy = (tile / 10) * 16;
-        w4.blitSub(&assets.tileset, 144, 96, 16, 16, sx, sy, assets.tilesetWidth, assets.tilesetFlags);
-        w4.blitSub(&assets.tileset, 144, 112, 16, 16, sx, sy + 16, assets.tilesetWidth, assets.tilesetFlags);
+        draw_tile(144, 96, 16, 32, 9);
     }
 
     world.process(&.{ .pos, .physics }, moveProcess);
     world.process(&.{ .pos, .spr }, drawProcess);
 
     wae.update();
+}
+
+inline fn draw_tile(x: i32, y: i32, w: i32, h: i32, tile: u8) void {
+    const sw = assets.tilesetWidth / 16;
+    var sx = (tile % sw) * 16;
+    var sy = (tile / sw) * 16;
+    w4.blitSub(&assets.tileset, x, y, w, h, sx, sy, assets.tilesetWidth, assets.tilesetFlags);
+}
+
+fn draw_map(tilemap: []const u8) void {
+    w4.DRAW_COLORS.* = 0x0014;
+    for (tilemap) |tile, index| {
+        var i = @intCast(u8, index);
+        var x = (i % 10) * 16;
+        var y = (i / 10) * 16;
+        draw_tile(x, y, 16, 16, tile);
+    }
 }
 
 fn drawProcess(posptr: *comp.Vec, sprptr: *comp.Spr) void {
