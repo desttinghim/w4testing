@@ -23,7 +23,7 @@ var fba = std.heap.FixedBufferAllocator.init(&heap);
 
 const World = ecs.World(struct {
     pos: ?comp.Pos = null,
-    physics: ?comp.Physics = null,
+    kinematic: ?comp.Kinematic = null,
     spr: ?comp.Spr = null,
 });
 var world = World.init(fba.allocator());
@@ -43,12 +43,12 @@ const level = [100]u8{
 
 pub fn start() !void {
     const pos = comp.Vec.init(10, 10);
-    const phy = .{ .last_pos = comp.Vec.init(7, 8) };
+    const phy = .{ .last_pos = pos, .collider = comp.AABB.init(0, 0, 16, 16) };
     util.trace("{}, {}", .{ pos, phy });
     util.trace("{}", .{pos.sub(phy.last_pos)});
     _ = world.create(.{
         .pos = pos,
-        .physics = phy,
+        .kinematic = phy,
         .spr = .{ .id = 90, .col = .{ 0, 1, 4 } },
     });
 
@@ -62,15 +62,12 @@ pub fn start() !void {
 pub fn update() !void {
     frameCount += 1;
 
-    draw_map(&level);
-    defer {
-        w4.DRAW_COLORS.* = 0x0014;
-        // Draw these items over everything else
-        draw_tile(144, 96, 16, 32, 9);
-    }
+    world.process(&.{ .pos, .kinematic }, physicsProcess);
 
-    world.process(&.{ .pos, .physics }, moveProcess);
+    // Draw
+    drawPreprocess();
     world.process(&.{ .pos, .spr }, drawProcess);
+    drawPostprocess();
 
     wae.update();
 }
@@ -92,6 +89,10 @@ fn draw_map(tilemap: []const u8) void {
     }
 }
 
+fn drawPreprocess() void {
+    draw_map(&level);
+}
+
 fn drawProcess(posptr: *comp.Vec, sprptr: *comp.Spr) void {
     const pos = posptr.*;
     const spr = sprptr.*;
@@ -103,22 +104,56 @@ fn drawProcess(posptr: *comp.Vec, sprptr: *comp.Spr) void {
     w4.blitSub(&assets.tileset, pos.x, pos.y, 16, 16, sx, sy, assets.tilesetWidth, assets.tilesetFlags);
 }
 
-fn abs(x: i32) i32 {
-    return std.math.absInt(x) catch unreachable;
+fn drawPostprocess() void {
+    w4.DRAW_COLORS.* = 0x0014;
+    // Draw these items over everything else
+    draw_tile(144, 96, 16, 32, 9);
 }
 
-fn moveProcess(pos: *comp.Pos, physics: *comp.Physics) void {
-    const last_pos = pos.*;
-    const vel = pos.*.sub(physics.*.last_pos);
-    var x = pos.*.x + vel.x;
-    var y = pos.*.y + vel.y;
-    if (x > 160) x = 160 - abs(vel.x);
-    if (x < 0) x = abs(vel.x);
-    if (y > 160) y = 160 - abs(vel.y);
-    if (y < 0) y = abs(vel.y);
-    pos.* = .{
-        .x = x,
-        .y = y,
-    };
-    physics.*.last_pos = last_pos;
+/// pos should be in tile coordinates, not world coordinates
+fn get_tile(x: i32, y: i32) u8 {
+    const i = x + y * 10;
+    return level[@intCast(u32, i)];
+}
+
+/// rect should be absolutely positioned. Add pos to kinematic.collider
+fn level_collide(rect: comp.AABB) std.BoundedArray(comp.AABB, 9) {
+    const top_left = rect.pos.div(16);
+    const bot_right = rect.pos.add(rect.size).div(16);
+    var collisions = std.BoundedArray(comp.AABB, 9).init(0) catch unreachable;
+
+    var i: isize = top_left.x;
+    while (i <= bot_right.x) : (i += 1) {
+        var a: isize = top_left.y;
+        while (a <= bot_right.y) : (a += 1) {
+            if (get_tile(i, a) != 2) collisions.append(comp.AABB.init(i * 16, a * 16, 16, 16)) catch unreachable;
+        }
+    }
+
+    return collisions;
+}
+
+const GRAVITY = 1;
+
+fn physicsProcess(posptr: *comp.Pos, kinematicptr: *comp.Kinematic) void {
+    const current = posptr.*;
+    const kinematic = kinematicptr.*;
+    var vel = current.sub(kinematic.last_pos);
+    vel.y += GRAVITY;
+    var next = current;
+
+    next.x += vel.x;
+    var collisions = level_collide(kinematic.collider.addV(next));
+    if (collisions.len > 0) {
+        next.x = current.x;
+    }
+
+    next.y += vel.y;
+    collisions = level_collide(kinematic.collider.addV(next));
+    if (collisions.len > 0) {
+        next.y = current.y;
+    }
+
+    posptr.* = next;
+    kinematicptr.*.last_pos = current;
 }
