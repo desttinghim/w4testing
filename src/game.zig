@@ -73,6 +73,34 @@ const World = struct {
         _ = entity;
     }
 
+    const Self = @This();
+    const WorldIterator = struct {
+        world: *Self,
+        lastEntity: ?Entity,
+        index: usize,
+        query: EntityQuery,
+
+        pub fn init(w: *Self) @This() {
+            return @This(){
+                .world = w,
+                .lastEntity = null,
+                .index = 0,
+                .query = EntityQuery{ .required = EntitySet.init(.{}) },
+            };
+        }
+
+        pub fn next(this: *@This()) ?*Entity {
+            if (this.lastEntity) |e| this.world.entities.set(this.index - 1, e);
+            if (this.index == this.world.entities.len) return null;
+            this.lastEntity = this.world.entities.get(this.index);
+            this.index += 1;
+            return &this.lastEntity.?;
+        }
+    };
+    pub fn iterAll(this: *@This()) WorldIterator {
+        return WorldIterator.init(this);
+    }
+
     pub fn query(require: []const EntityEnum) EntityQuery {
         var q = EntitySet.init(.{});
         for (require) |f| {
@@ -158,8 +186,19 @@ pub fn update() !void {
 
     var physicsQuery = World.query(&.{ .pos, .vel });
     world.process(&physicsQuery, moveProcess);
-    var drawQuery = World.query(&.{ .pos, .spr });
-    world.process(&drawQuery, drawProcess);
+    // var drawQuery = World.query(&.{ .pos, .spr });
+    // world.process(&drawQuery, drawProcess);
+    var drawIter = world.iterAll();
+    while (drawIter.next()) |e| {
+        const pos = e.pos.?;
+        const spr = e.spr.?;
+
+        const sx = (spr.id % 10) * 16;
+        const sy = (spr.id / 10) * 16;
+
+        w4.DRAW_COLORS.* = spr.toDrawColor();
+        w4.blitSub(&assets.tileset, pos.x, pos.y, 16, 16, sx, sy, assets.tilesetWidth, assets.tilesetFlags);
+    }
 
     wae.update();
 }
