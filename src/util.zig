@@ -11,15 +11,16 @@ pub fn trace(comptime fmt: []const u8, args: anytype) void {
     w4.trace(print);
 }
 
+const T = f32;
 pub const Vec = struct {
-    x: i32,
-    y: i32,
+    x: T,
+    y: T,
 
     pub fn eq(this: @This(), other: @This()) bool {
         return this.x == other.x and this.y == other.y;
     }
 
-    pub fn init(x: i32, y: i32) @This() {
+    pub fn init(x: T, y: T) @This() {
         return @This(){ .x = x, .y = y };
     }
 
@@ -37,7 +38,7 @@ pub const Vec = struct {
         };
     }
 
-    pub fn div(this: @This(), scalar: i32) @This() {
+    pub fn div(this: @This(), scalar: T) @This() {
         return .{
             .x = @divTrunc(this.x, scalar),
             .y = @divTrunc(this.y, scalar),
@@ -49,7 +50,7 @@ pub const AABB = struct {
     pos: Vec,
     size: Vec,
 
-    pub fn init(x: i32, y: i32, w: i32, h: i32) @This() {
+    pub fn init(x: T, y: T, w: T, h: T) @This() {
         return @This(){
             .pos = Vec.init(x, y),
             .size = Vec.init(w, h),

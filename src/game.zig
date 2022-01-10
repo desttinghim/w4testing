@@ -112,7 +112,7 @@ fn drawProcess(posptr: *comp.Pos, sprptr: *comp.Spr) void {
     const sy = (spr.id / 10) * 16;
 
     w4.DRAW_COLORS.* = spr.toDrawColor();
-    w4.blitSub(&assets.tileset, pos.x, pos.y, 16, 16, sx, sy, assets.tilesetWidth, assets.tilesetFlags);
+    w4.blitSub(&assets.tileset, @floatToInt(i32, pos.x), @floatToInt(i32, pos.y), 16, 16, sx, sy, assets.tilesetWidth, assets.tilesetFlags);
 }
 
 fn drawPostprocess() void {
@@ -134,12 +134,12 @@ fn level_collide(rect: AABB) std.BoundedArray(AABB, 9) {
     const bot_right = rect.pos.add(rect.size).div(16);
     var collisions = std.BoundedArray(AABB, 9).init(0) catch unreachable;
 
-    var i: isize = top_left.x;
-    while (i <= bot_right.x) : (i += 1) {
-        var a: isize = top_left.y;
-        while (a <= bot_right.y) : (a += 1) {
+    var i: isize = @floatToInt(i32, top_left.x);
+    while (i <= @floatToInt(i32, bot_right.x)) : (i += 1) {
+        var a: isize = @floatToInt(i32, top_left.y);
+        while (a <= @floatToInt(i32, bot_right.y)) : (a += 1) {
             var tile = get_tile(i, a);
-            if (tile == null or tile.? != 2) collisions.append(AABB.init(i * 16, a * 16, 16, 16)) catch unreachable;
+            if (tile == null or tile.? != 2) collisions.append(AABB.init(@intToFloat(f32, i * 16), @intToFloat(f32, a * 16), 16, 16)) catch unreachable;
         }
     }
 
@@ -178,14 +178,15 @@ fn controllerProcess(posptr: *comp.Pos, controllerptr: *comp.Controller, kinemat
     if (btn(input, .RIGHT)) pos.x += 1;
     if (btn(input, .LEFT)) pos.x -= 1;
     // Jump
-    if (kinematicptr.onground and !btn(prev, .ONE)) controllerptr.*.aircontrol = controllerptr.AirControl;
-    if (btnp(input, prev, .ONE) and kinematicptr.onground) {
+    if (kinematicptr.onground and !btn(prev, .TWO)) controllerptr.*.aircontrol = controllerptr.AirControl;
+    if (btnp(input, prev, .TWO) and kinematicptr.onground) {
         pos.y -= 8;
     }
-    if (!kinematicptr.onground and controllerptr.aircontrol > 0 and btn(input, .ONE)) {
+    if (!kinematicptr.onground and controllerptr.aircontrol > 0 and btn(input, .TWO)) {
         pos.y -= 1;
         controllerptr.*.aircontrol -= 1;
     }
+    if (btnp(input, prev, .ONE)) w4.tone(262, 0 | (10 << 8), 50, w4.TONE_PULSE1);
     posptr.*.cur = pos;
     controllerptr.prev = input;
 }

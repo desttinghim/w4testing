@@ -3,11 +3,12 @@ const util = @import("util.zig");
 const Vec = util.Vec;
 const AABB = util.AABB;
 
+const T = f32;
 pub const Pos = struct {
     cur: Vec,
     old: Vec,
 
-    pub fn init(x: i32, y: i32) @This() {
+    pub fn init(x: T, y: T) @This() {
         return @This(){ .cur = Vec.init(x, y), .old = Vec.init(x, y) };
     }
 };
