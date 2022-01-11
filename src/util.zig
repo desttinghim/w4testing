@@ -44,6 +44,13 @@ pub const Vec = struct {
             .y = @divTrunc(this.y, scalar),
         };
     }
+
+    pub fn mul(this: @This(), scalar: T) @This() {
+        return .{
+            .x = this.x * scalar,
+            .y = this.y * scalar,
+        };
+    }
 };
 
 pub const AABB = struct {

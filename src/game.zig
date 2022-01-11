@@ -30,6 +30,7 @@ const World = ecs.World(struct {
     gravity: ?comp.Gravity = null,
     controller: ?comp.Controller = null,
 });
+const Q = World.Query;
 var world = World.init(fba.allocator());
 
 const level = [100]u8{
@@ -52,7 +53,7 @@ pub fn start() !void {
         .pos = pos,
         .kinematic = phy,
         .spr = .{ .id = 90, .col = .{ 0, 1, 4 } },
-        .gravity = Vec.init(0, 1),
+        .gravity = Vec.init(0, 3),
         .controller = comp.Controller.player(.GAMEPAD1),
     });
 
@@ -66,18 +67,22 @@ pub fn start() !void {
 pub fn update() !void {
     frameCount += 1;
 
-    // Process physics twice a frame
-    var i: usize = 0;
-    while (i < 2) : (i += 1) {
-        world.process(&.{.pos}, velocityProcess);
-        world.process(&.{ .pos, .gravity }, gravityProcess);
-        world.process(&.{ .pos, .controller, .kinematic }, controllerProcess);
-        world.process(&.{ .pos, .kinematic }, collisionProcess);
+    {
+        // Process physics twice a frame
+        const processCount = 2;
+        const dt = 1 / processCount;
+        var i: usize = 0;
+        while (i < processCount) : (i += 1) {
+            world.process(dt, &.{.pos}, velocityProcess);
+            world.process(dt, &.{ .pos, .gravity }, gravityProcess);
+            world.process(dt, &.{ .pos, .controller, .kinematic }, controllerProcess);
+            world.process(dt, &.{ .pos, .kinematic }, collisionProcess);
+        }
     }
 
     // Draw
     drawPreprocess();
-    world.process(&.{ .pos, .spr }, drawProcess);
+    world.process(1, &.{ .pos, .spr }, drawProcess);
     drawPostprocess();
 
     wae.update();
@@ -104,7 +109,7 @@ fn drawPreprocess() void {
     draw_map(&level);
 }
 
-fn drawProcess(posptr: *comp.Pos, sprptr: *comp.Spr) void {
+fn drawProcess(_: f32, posptr: *comp.Pos, sprptr: *comp.Spr) void {
     const pos = posptr.*.cur;
     const spr = sprptr.*;
 
@@ -164,7 +169,7 @@ inline fn btnp(input: u8, prev: u8, pad: Pad) bool {
 }
 
 /// System for controlling entities with physics
-fn controllerProcess(posptr: *comp.Pos, controllerptr: *comp.Controller, kinematicptr: *comp.Kinematic) void {
+fn controllerProcess(_: f32, posptr: *comp.Pos, controllerptr: *comp.Controller, kinematicptr: *comp.Kinematic) void {
     const input = switch (controllerptr.control) {
         .player => |gamepad| switch (gamepad) {
             .GAMEPAD1 => w4.GAMEPAD1.*,
@@ -191,12 +196,13 @@ fn controllerProcess(posptr: *comp.Pos, controllerptr: *comp.Controller, kinemat
     controllerptr.prev = input;
 }
 
-fn velocityProcess(posptr: *comp.Pos) void {
+fn velocityProcess(dt: f32, posptr: *comp.Pos) void {
+    _ = dt;
     const cur = posptr.*.cur;
     const old = posptr.*.old;
     var vel = cur.sub(old);
 
-    vel.x = @divTrunc(vel.x, 2);
+    vel.x *= 0.9;
 
     const next = cur.add(vel);
 
@@ -204,11 +210,12 @@ fn velocityProcess(posptr: *comp.Pos) void {
     posptr.*.old = cur;
 }
 
-fn gravityProcess(posptr: *comp.Pos, gravityptr: *comp.Gravity) void {
+fn gravityProcess(dt: f32, posptr: *comp.Pos, gravityptr: *comp.Gravity) void {
+    _ = dt;
     posptr.*.cur = posptr.*.cur.add(gravityptr.*);
 }
 
-fn collisionProcess(posptr: *comp.Pos, kinematicptr: *comp.Kinematic) void {
+fn collisionProcess(_: f32, posptr: *comp.Pos, kinematicptr: *comp.Kinematic) void {
     const pos = posptr.*.cur;
     const old = posptr.*.old;
     const kinematic = kinematicptr.*;

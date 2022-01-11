@@ -82,13 +82,14 @@ pub fn World(comptime Component: type) type {
             return &t;
         }
 
-        pub fn process(this: *@This(), comptime comp: []const ComponentEnum, func: anytype) void {
-            const Args = Tuple(enum2type(comp));
+        pub fn process(this: *@This(), dt: f32, comptime comp: []const ComponentEnum, func: anytype) void {
+            const Args = Tuple([_]type{f32} ++ enum2type(comp));
             var i = this.iter(Query.require(comp));
             while (i.next()) |e| {
                 var args: Args = undefined;
+                args[0] = dt;
                 inline for (comp) |f, j| {
-                    args[j] = &(@field(e, @tagName(f)).?);
+                    args[j + 1] = &(@field(e, @tagName(f)).?);
                 }
                 @call(.{}, func, args);
             }
