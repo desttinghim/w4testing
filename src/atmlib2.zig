@@ -66,9 +66,9 @@ pub const Command = union(CommandTag) {
         }
 
         const secondBit = 0b0100_0000 & commandByte;
-        if (secondBit != 0) {
+        if (secondBit == 0) {
             // If the first bit was 0 and the second bit is 0, it is a note
-            const note = 0b0011_1111 & commandByte;
+            const note = @truncate(u6, 0b0011_1111 & commandByte);
             if (note == 0) return .NoteOff;
             return .{ .NoteOn = note };
         }
@@ -79,7 +79,7 @@ pub const Command = union(CommandTag) {
             return .{ .Delay = @truncate(u6, delay + 1) };
         }
 
-        const fourthBit = 0b0001_0000;
+        const fourthBit = 0b0001_0000 & commandByte;
         const command = 0b0000_1111 & commandByte;
         if (fourthBit == 0) {
             return .{ .Command = @intToEnum(Immediate, @truncate(u4, command)) };
@@ -100,15 +100,21 @@ pub const Command = union(CommandTag) {
             .Reserved => 0b1111_0000,
         };
     }
+
+    pub fn toBytes(commands: []const @This(), out: []u8) void {
+        for (commands) |cmd, i| {
+            out[i] = cmd.toByte();
+        }
+    }
 };
 
 pub const CommonHeader = struct {
-    channelInfoPresent: bool,
     patternInfoPresent: bool,
+    channelInfoPresent: bool,
     pub fn fromByte(byte: u8) @This() {
         return @This(){
-            .channelInfoPresent = (0b0000_0001 & byte) != 0,
             .patternInfoPresent = (0b0000_0010 & byte) != 0,
+            .channelInfoPresent = (0b0000_0001 & byte) != 0,
         };
     }
 
@@ -117,30 +123,39 @@ pub const CommonHeader = struct {
         const patternFlag: u8 = if (this.patternInfoPresent) 0b0000_0010 else 0;
         return channelFlag | patternFlag;
     }
+
+    pub fn eq(this: @This(), other: @This()) bool {
+        return this.patternInfoPresent == other.patternInfoPresent and
+            this.channelInfoPresent == other.channelInfoPresent;
+    }
 };
 
 pub const PatternHeader = struct {
     patternCount: u6,
-    patternOffsets: []u16,
+    patternOffsets: []const u8,
 
     pub fn fromBytes(bytes: []const u8) @This() {
         const patternCount = 0b0011_1111 & bytes[0];
         return @This(){
-            .patternCount = patternCount,
+            .patternCount = @truncate(u6, patternCount),
             .patternOffsets = bytes[1 .. (2 * patternCount) + 1],
         };
     }
 
     pub fn toBytes(this: @This(), bytes: []u8) usize {
         bytes[0] = this.patternCount;
-        std.mem.copy(u8, @ptrCast(*u8, this.patternOffsets), bytes[1..]);
+        std.mem.copy(u8, this.patternOffsets, bytes[1..]);
         return (this.patternOffsets * 2) + 1;
+    }
+
+    pub fn size(this: @This()) usize {
+        return 1 + this.patternOffsets.len;
     }
 };
 
 pub const ChannelHeader = struct {
     count: u2,
-    entryPatterns: []u8,
+    entryPatterns: []const u8,
 
     pub fn fromBytes(bytes: []const u8) @This() {
         const count = @truncate(u2, 0b0000_0011 & bytes[0]);
@@ -155,6 +170,10 @@ pub const ChannelHeader = struct {
         std.mem.copy(u8, this.entryPatterns, bytes[1..]);
         return this.entryPatterns.len + 1;
     }
+
+    pub fn size(this: @This()) usize {
+        return 1 + this.entryPatterns.len;
+    }
 };
 
 pub const Score = struct {
@@ -162,7 +181,28 @@ pub const Score = struct {
     pattern_info: ?PatternHeader,
     channel_info: ?ChannelHeader,
     // extensions: void, // could be anything
-    pattern_data: []const Command,
+    pattern_data: []const u8,
+
+    pub fn fromBytes(bytes: []const u8) @This() {
+        var n: usize = 0;
+        var this = @This(){
+            .common_header = CommonHeader.fromByte(bytes[n]),
+            .pattern_info = null,
+            .channel_info = null,
+            .pattern_data = &[0]u8{},
+        };
+        n += 1;
+        if (this.common_header.patternInfoPresent) {
+            this.pattern_info = PatternHeader.fromBytes(bytes[n..]);
+            n += this.pattern_info.?.size();
+        }
+        if (this.common_header.channelInfoPresent) {
+            this.channel_info = ChannelHeader.fromBytes(bytes[n..]);
+            n += this.pattern_info.?.size();
+        }
+        this.pattern_data = bytes[n..];
+        return this;
+    }
 
     pub fn toBytes(this: @This(), bytes: []u8) void {
         var n: usize = 0;
@@ -173,13 +213,43 @@ pub const Score = struct {
         // if (this.common_header.channelInfoPresent) n += this.channel_info.?.toBytes(bytes[n..]);
 
         for (this.pattern_data) |cmd, i| {
-            bytes[n + i] = cmd.toByte();
+            bytes[n + i] = cmd;
         }
+    }
+
+    pub fn debugPrint(this: @This()) void {
+        std.log.warn("{}", .{this.common_header});
+        std.log.warn("{}", .{this.pattern_info});
+        std.log.warn("{}", .{this.channel_info});
+        var nextIsParam = false;
+        for (this.pattern_data) |cmdb| {
+            const cmd = parsed: {
+                if (nextIsParam) {
+                    nextIsParam = false;
+                    break :parsed Command{ .Literal = cmdb };
+                } else {
+                    break :parsed Command.fromByte(cmdb);
+                }
+            };
+            if (cmd == .SingleParam) nextIsParam = true;
+            std.log.warn("{}", .{cmd});
+        }
+    }
+
+    pub fn eq(this: @This(), other: @This()) bool {
+        if (!this.common_header.eq(other.common_header)) return false;
+        // if (this.pattern_info != other.pattern_info) return false;
+        // if (this.channel_info != other.channel_info) return false;
+        for (this.pattern_data) |cmdb, i| {
+            if (cmdb != other.pattern_data[i]) return false;
+        }
+        return true;
     }
 };
 
 test "binary music test" {
-    const score = [_]u8{
+    // Hand written binary
+    const binary_score = [_]u8{
         0b0000_0000, // Common header, no pattern or channel info
         0b0111_0100, // Set volume to following byte
         0b0001_1111, // literal 31
@@ -187,21 +257,33 @@ test "binary music test" {
         0b0101_1000, // Delay 25 ticks
         0b0110_0001, // Stop
     };
+    const binary_score_zig = Score.fromBytes(&binary_score);
 
+    // Zig types
+    const pattern = [_]Command{
+        .{ .SingleParam = .SetVolume },
+        .{ .Literal = 31 },
+        .{ .NoteOn = 25 },
+        .{ .Delay = 25 },
+        .{ .Command = .PatternEnd },
+    };
+    var patternBytes: [5]u8 = undefined;
+    Command.toBytes(&pattern, &patternBytes);
     const zig_score = Score{
         .common_header = .{ .channelInfoPresent = false, .patternInfoPresent = false },
         .pattern_info = null,
         .channel_info = null,
-        .pattern_data = &[_]Command{
-            .{ .SingleParam = .SetVolume },
-            .{ .Literal = 31 },
-            .{ .NoteOn = 25 },
-            .{ .Delay = 25 },
-            .{ .Command = .PatternEnd },
-        },
+        .pattern_data = &patternBytes,
     };
 
     var zig_score_bytes: [6]u8 = undefined;
     zig_score.toBytes(&zig_score_bytes);
-    try std.testing.expectEqualSlices(u8, &score, &zig_score_bytes);
+
+    // Debug output
+    binary_score_zig.debugPrint();
+    zig_score.debugPrint();
+
+    // Test equality
+    try std.testing.expectEqualSlices(u8, &binary_score, &zig_score_bytes);
+    try std.testing.expect(zig_score.eq(binary_score_zig));
 }
