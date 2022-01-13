@@ -1,10 +1,10 @@
 const std = @import("std");
 const wael = @import("wael.zig");
-const basecs = @import("basecs.zig");
+const atmlib2 = @import("atmlib2.zig");
 
 comptime {
     _ = wael;
-    _ = basecs;
+    _ = atmlib2;
 }
 
 pub const song =
